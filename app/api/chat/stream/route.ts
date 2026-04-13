@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
       caseSpec.true_diagnosis,
       difficulty,
       unfriendlinessByDifficulty[difficulty],
+      caseSpec.patient.name,
       caseSpec.patient.age,
       caseSpec.patient.gender,
       caseSpec.answer_key

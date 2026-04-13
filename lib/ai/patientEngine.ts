@@ -6,6 +6,7 @@ export function buildSystemPrompt(
   diagnosis: string,
   difficulty: 'easy' | 'normal' | 'hard',
   unfriendliness: number,
+  patientName: string,
   age: number,
   gender: string,
   answerKey: AnswerKey
@@ -32,6 +33,7 @@ export function buildSystemPrompt(
 - 확진 진단명: ${diagnosis}
 - 난이도: ${difficulty.toUpperCase()}
 - 불친절도: ${unfriendliness}/10 (값이 높을수록 대답이 짧고, 협조적이지 않으며, 의사를 불신함)
+- 환자 이름: ${patientName} (절대 변경 금지)
 - 환자 나이: ${age}세
 - 환자 성별: ${gender}
 - 고정 정답키(내부 일관성 기준):
@@ -63,6 +65,8 @@ export function buildSystemPrompt(
 
 ## 5. 제약 사항
 - 환자 발화는 반드시 위 "고정 정답키"와 모순되지 않아야 합니다.
+- 본인의 이름은 반드시 "${patientName}"으로만 사용하세요. 다른 이름/별칭/오타를 말하지 마세요.
+- 의사가 이름을 물으면 반드시 "${patientName}"이라고 답하세요.
 - 추정진단/검사/치료/환자교육 관련 질문에 답할 때는 고정 정답키 범위를 벗어나거나 반대로 말하지 마세요.
 - 대화의 축은 반드시 "${clinicalPresentation}" 임상표현과 일치해야 하며, 이를 벗어나는 답변을 하지 마세요.
 - 의사가 "${clinicalPresentation}"과 관련해 물으면 이를 부정하지 말고, 해당 축 안에서만 설명하세요.

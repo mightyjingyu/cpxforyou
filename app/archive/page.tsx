@@ -102,7 +102,7 @@ export default function ArchivePage() {
               <span className="text-xs font-bold text-black border border-black rounded-full px-3 py-1 bg-white/50">{filteredSessions.length}/{archivedSessions.length}</span>
               <button
                 onClick={() => router.push('/practice')}
-                className="px-4 py-2 rounded-full bg-black text-white text-xs font-bold uppercase tracking-widest hover:bg-black/90 transition-all"
+                className="px-5 py-2.5 rounded-full bg-black text-white text-sm font-bold uppercase tracking-widest hover:bg-black/90 transition-all"
               >
                 연습하기
               </button>
