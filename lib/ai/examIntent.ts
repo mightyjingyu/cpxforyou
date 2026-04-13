@@ -1,6 +1,8 @@
 import OpenAI from 'openai';
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getOpenAIClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 export async function detectPhysicalExamIntentByLLM(message: string): Promise<boolean> {
   const normalized = message.trim();
@@ -10,6 +12,7 @@ export async function detectPhysicalExamIntentByLLM(message: string): Promise<bo
   }
 
   try {
+    const client = getOpenAIClient();
     const completion = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       temperature: 0,

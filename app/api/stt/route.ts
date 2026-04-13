@@ -3,7 +3,9 @@ import OpenAI, { toFile } from 'openai';
 
 export const runtime = 'nodejs';
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getOpenAIClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,6 +28,7 @@ export async function POST(req: NextRequest) {
     const type = raw.type || 'audio/webm';
     const file = await toFile(buf, name, { type });
 
+    const client = getOpenAIClient();
     const transcription = await client.audio.transcriptions.create({
       file,
       model: 'whisper-1',

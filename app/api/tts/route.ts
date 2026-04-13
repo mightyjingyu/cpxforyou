@@ -3,7 +3,9 @@ import OpenAI from 'openai';
 
 export const runtime = 'nodejs';
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getOpenAIClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,6 +21,7 @@ export async function POST(req: NextRequest) {
 
     const voice = gender === '남' ? 'echo' : 'alloy';
 
+    const client = getOpenAIClient();
     const speech = await client.audio.speech.create({
       model: 'tts-1',
       voice,

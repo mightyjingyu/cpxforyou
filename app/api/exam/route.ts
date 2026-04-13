@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { CaseSpec } from '@/types';
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getOpenAIClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 interface Body {
   transcript: string;
@@ -25,6 +27,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    const client = getOpenAIClient();
     const response = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       temperature: 0.1,

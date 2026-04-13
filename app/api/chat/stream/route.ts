@@ -7,7 +7,9 @@ import { CaseSpec, Message } from '@/types';
 
 export const runtime = 'nodejs';
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getOpenAIClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 type Body =
   | { sessionId: string; message: string }
@@ -120,6 +122,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    const client = getOpenAIClient();
     const llmStream = await client.chat.completions.create({
       model: 'gpt-4o',
       messages,

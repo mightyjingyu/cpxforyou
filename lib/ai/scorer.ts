@@ -2,7 +2,9 @@ import OpenAI from 'openai';
 import { CaseSpec, Message, ScoreResult } from '@/types';
 import { buildScoringPrompt } from './patientEngine';
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getOpenAIClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 export function formatConversationLog(messages: Message[]): string {
   return messages
@@ -102,6 +104,7 @@ export async function scoreSession(
   conversationHistory: Message[],
   caseSpec: CaseSpec
 ): Promise<ScoreResult> {
+  const client = getOpenAIClient();
   if (!hasMeaningfulAttempt(conversationHistory)) {
     return buildNoAttemptScore(caseSpec);
   }

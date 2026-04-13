@@ -5,7 +5,9 @@ import { appendChatTurn, getChatSession } from '@/lib/server/chatSessionStore';
 import { detectPhysicalExamIntentByLLM } from '@/lib/ai/examIntent';
 import { CaseSpec, Message } from '@/types';
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getOpenAIClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 type Body =
   | { sessionId: string; message: string }
@@ -102,6 +104,7 @@ export async function POST(req: NextRequest) {
       { role: 'user', content: message },
     ];
 
+    const client = getOpenAIClient();
     const response = await client.chat.completions.create({
       model: 'gpt-4o',
       messages,

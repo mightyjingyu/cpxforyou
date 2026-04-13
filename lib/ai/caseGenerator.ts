@@ -3,7 +3,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { CaseSpec } from '@/types';
 import { SEED_CASES } from '@/data/seeds/cases';
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getOpenAIClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 export async function generateCaseSpec(params: {
   clinical_presentation: string;
@@ -11,6 +13,7 @@ export async function generateCaseSpec(params: {
   learning_goal: string[];
   persona_template_id: string;
 }): Promise<CaseSpec> {
+  const client = getOpenAIClient();
   const { clinical_presentation, difficulty, learning_goal } = params;
 
   // 시드 케이스에서 해당 임상표현 찾기 (품질 기준)
