@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import { useSessionStore } from '@/store/sessionStore';
 import { CLINICAL_CATEGORIES, CLINICAL_PRESENTATIONS } from '@/lib/ai/personaTemplate';
-import { CaseSpec, Difficulty, Friendliness } from '@/types';
+import { CaseSpec, Difficulty, Friendliness, TimerMode } from '@/types';
 
 type PracticeMode = 'full_random' | 'category_random' | 'clinical_pick';
 
@@ -18,6 +18,7 @@ export default function PracticePage() {
   const [presentation, setPresentation] = useState<string>(CLINICAL_PRESENTATIONS[0] || '');
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [friendliness, setFriendliness] = useState<Friendliness>('normal');
+  const [timerMode, setTimerMode] = useState<TimerMode>('countdown');
 
   const handleStartSession = async () => {
     setLoading(true);
@@ -66,7 +67,7 @@ export default function PracticePage() {
         throw new Error((err as { error?: string }).error || '서버 세션 등록 실패');
       }
 
-      startSession(caseSpec, sessionId, selectedDifficulty);
+      startSession(caseSpec, sessionId, selectedDifficulty, timerMode);
       router.push(`/session/${sessionId}`);
     } catch (error) {
       console.error('Failed to start session:', error);
@@ -214,6 +215,40 @@ export default function PracticePage() {
                 </div>
               </div>
             )}
+
+            <div className="relative z-10 pt-2 border-t border-black/10">
+              <label className="text-xs font-black text-black uppercase tracking-widest mb-3 block">타이머 방식</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setTimerMode('countdown')}
+                  className={`text-left rounded-2xl border p-4 transition-all ${
+                    timerMode === 'countdown'
+                      ? 'border-black bg-black text-white shadow-md'
+                      : 'border-black/20 bg-white/50 hover:border-black/40'
+                  }`}
+                >
+                  <p className="text-sm font-black mb-1">카운트다운 (12분)</p>
+                  <p className={`text-xs font-medium leading-relaxed ${timerMode === 'countdown' ? 'text-white/80' : 'text-black/50'}`}>
+                    12:00부터 줄어들며, 0이 되면 자동 종료됩니다.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimerMode('countup')}
+                  className={`text-left rounded-2xl border p-4 transition-all ${
+                    timerMode === 'countup'
+                      ? 'border-black bg-black text-white shadow-md'
+                      : 'border-black/20 bg-white/50 hover:border-black/40'
+                  }`}
+                >
+                  <p className="text-sm font-black mb-1">카운트업 (무제한)</p>
+                  <p className={`text-xs font-medium leading-relaxed ${timerMode === 'countup' ? 'text-white/80' : 'text-black/50'}`}>
+                    0:00부터 올라가며, 시간 제한 없이 진행합니다.
+                  </p>
+                </button>
+              </div>
+            </div>
 
             <div className="pt-4 relative z-10">
               <button

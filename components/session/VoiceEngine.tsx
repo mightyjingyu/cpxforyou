@@ -28,6 +28,7 @@ function playBlob(blob: Blob): Promise<void> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
+    audio.playbackRate = 1.12;
     audio.onended = () => {
       URL.revokeObjectURL(url);
       resolve();

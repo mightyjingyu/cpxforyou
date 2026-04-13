@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
       voice,
       input: input.slice(0, 4096),
       response_format: 'mp3',
+      speed: 1.18,
     });
 
     const buf = Buffer.from(await speech.arrayBuffer());

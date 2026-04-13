@@ -149,6 +149,15 @@ export interface ScoreResult {
   final_answer_evaluation: FinalAnswerEvaluation;
 }
 
+/** 병력청취 / 신체진찰 / 교육(설명·마무리) 구간 소요 시간(초) */
+export interface SessionPhaseDurations {
+  historyTakingSeconds: number;
+  physicalExamSeconds: number;
+  educationSeconds: number;
+}
+
+export type TimerMode = 'countdown' | 'countup';
+
 export interface SessionData {
   id: string;
   caseSpec: CaseSpec;
@@ -159,6 +168,8 @@ export interface SessionData {
   elapsedSeconds: number;
   scoreResult?: ScoreResult;
   physicalExamDone: boolean;
+  timerMode?: TimerMode;
+  phaseDurations?: SessionPhaseDurations;
 }
 
 export type Difficulty = 'easy' | 'normal' | 'hard';

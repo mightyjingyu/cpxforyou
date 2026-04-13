@@ -21,9 +21,11 @@ export default function SessionPage() {
     sessionId,
     deductTime,
     markPhysicalExamDone,
+    recordPhysicalExamStarted,
     addMessage,
     endSession,
     physicalExamDone,
+    timerStarted,
   } = useSessionStore();
 
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
@@ -35,6 +37,12 @@ export default function SessionPage() {
       router.replace('/');
     }
   }, [caseSpec, sessionStatus, router]);
+
+  useEffect(() => {
+    if (!physicalExamDone) {
+      setExamResultText('');
+    }
+  }, [physicalExamDone]);
 
   const handleTimeUp = useCallback(() => {
     endSession();
@@ -115,13 +123,11 @@ export default function SessionPage() {
       <div className="fixed bottom-[-5%] right-[-5%] w-[40%] h-[40%] rounded-full bg-neutral-300 blur-[100px] opacity-60 pointer-events-none z-0" />
 
       {/* 상단 바 */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-black bg-white/70 backdrop-blur-xl relative z-50 shrink-0">
-        <div className="flex items-center gap-4">
-          <span className="text-xs font-black text-black uppercase tracking-widest">CPX Session</span>
-          <div className="w-1.5 h-1.5 bg-black rounded-full" />
-          <div className="font-mono text-lg font-bold text-black">
-            <Timer onTimeUp={handleTimeUp} />
-          </div>
+      <header className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-black bg-white/70 backdrop-blur-xl relative z-50 shrink-0">
+        <div className="flex flex-wrap items-center gap-3 min-w-0">
+          <span className="text-xs font-black text-black uppercase tracking-widest shrink-0">CPX Session</span>
+          <div className="w-1.5 h-1.5 bg-black rounded-full shrink-0 hidden sm:block" />
+          <Timer onTimeUp={handleTimeUp} />
         </div>
 
         <button
@@ -139,13 +145,13 @@ export default function SessionPage() {
           <div className="absolute inset-0 bg-white/30 backdrop-blur-sm -z-10" />
           
           <div className="flex-1 flex items-center justify-center w-full">
-            <PatientVisual caseSpec={caseSpec} voiceState={voiceState} />
+            <PatientVisual caseSpec={caseSpec} voiceState={voiceState} timerStarted={timerStarted} />
           </div>
 
           <div className="w-full mt-4 flex justify-center">
             <VoiceEngine
               onVoiceStateChange={setVoiceState}
-              active={sessionStatus === 'active'}
+              active={sessionStatus === 'active' && timerStarted}
             />
           </div>
         </div>
@@ -162,7 +168,8 @@ export default function SessionPage() {
           <div className="shrink-0 flex flex-col gap-4">
             <PhysicalExamButton
               onExamTranscript={handlePhysicalExamTranscript}
-              active={sessionStatus === 'active'}
+              onPhysicalExamPressStart={recordPhysicalExamStarted}
+              active={sessionStatus === 'active' && timerStarted}
             />
             {examResultText && (
               <div className="rounded-2xl border border-black bg-black text-white p-5 shadow-lg animate-in slide-in-from-bottom-2">

@@ -5,6 +5,8 @@ import { CaseSpec } from '@/types';
 interface Props {
   caseSpec: CaseSpec;
   voiceState: 'idle' | 'listening' | 'thinking' | 'speaking';
+  /** false면 타이머 시작 전 안내 */
+  timerStarted?: boolean;
 }
 
 const PATIENT_AVATARS: Record<string, string> = {
@@ -12,7 +14,7 @@ const PATIENT_AVATARS: Record<string, string> = {
   '여': '👩',
 };
 
-export default function PatientVisual({ caseSpec, voiceState }: Props) {
+export default function PatientVisual({ caseSpec, voiceState, timerStarted = true }: Props) {
   const avatar = PATIENT_AVATARS[caseSpec.patient.gender] || '🧑';
 
   return (
@@ -81,7 +83,9 @@ export default function PatientVisual({ caseSpec, voiceState }: Props) {
           </div>
         )}
         {voiceState === 'idle' && (
-          <div className="text-xs font-bold text-black/30 tracking-widest uppercase">대기 중</div>
+          <div className="text-xs font-bold text-black/30 tracking-widest uppercase">
+            {!timerStarted ? '타이머 대기' : '대기 중'}
+          </div>
         )}
       </div>
 
@@ -90,7 +94,10 @@ export default function PatientVisual({ caseSpec, voiceState }: Props) {
         {voiceState === 'listening' && '듣는 중...'}
         {voiceState === 'thinking' && '환자가 생각 중...'}
         {voiceState === 'speaking' && '환자가 말하는 중'}
-        {voiceState === 'idle' && '마이크를 켜서 진료를 시작하세요'}
+        {voiceState === 'idle' &&
+          (!timerStarted
+            ? '상단에서 [시작]을 눌러 타이머를 시작하세요'
+            : '마이크를 켜서 진료를 시작하세요')}
       </div>
     </div>
   );

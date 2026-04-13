@@ -5,6 +5,8 @@ import { useSessionStore } from '@/store/sessionStore';
 
 interface Props {
   onExamTranscript: (transcript: string) => void;
+  /** 신체진찰 녹음 시작(버튼 누름) 시점 — 병력 vs 신체진찰 구간 분리용 */
+  onPhysicalExamPressStart?: () => void;
   active: boolean;
 }
 
@@ -19,7 +21,11 @@ function pickRecorderMime(): string | undefined {
   return undefined;
 }
 
-export default function PhysicalExamButton({ onExamTranscript, active }: Props) {
+export default function PhysicalExamButton({
+  onExamTranscript,
+  onPhysicalExamPressStart,
+  active,
+}: Props) {
   const { physicalExamDone } = useSessionStore();
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -35,6 +41,7 @@ export default function PhysicalExamButton({ onExamTranscript, active }: Props) 
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     setErrorMsg('');
+    onPhysicalExamPressStart?.();
 
     try {
       if (!streamRef.current) {
@@ -57,7 +64,7 @@ export default function PhysicalExamButton({ onExamTranscript, active }: Props) 
       setErrorMsg('마이크 권한이 필요합니다.');
       setRecording(false);
     }
-  }, [active, physicalExamDone, processing, recording]);
+  }, [active, physicalExamDone, processing, recording, onPhysicalExamPressStart]);
 
   const onPointerUp = useCallback(async (e: React.PointerEvent<HTMLButtonElement>) => {
     if (!recording || processing || !recorderRef.current) return;

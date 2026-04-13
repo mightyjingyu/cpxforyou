@@ -40,6 +40,12 @@ export default function ArchiveDetailPage() {
       scoreResult.ppi_score.closure
     : null;
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const formatPhase = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = Math.max(0, Math.round(sec % 60));
+    return `${m}분 ${s}초`;
+  };
+  const phases = session.phaseDurations;
 
   return (
     <div className="min-h-screen bg-white">
@@ -92,6 +98,31 @@ export default function ArchiveDetailPage() {
             )}
           </div>
         </div>
+
+        {phases && (
+          <div className="border border-neutral-100 rounded-2xl p-5 bg-white">
+            <h2 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-4">
+              단계별 소요 시간
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-neutral-100 p-3">
+                <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">병력청취</p>
+                <p className="text-lg font-bold text-black">{formatPhase(phases.historyTakingSeconds)}</p>
+                <p className="text-[10px] text-neutral-400 mt-1">시작 ~ 신체진찰 버튼</p>
+              </div>
+              <div className="rounded-xl border border-neutral-100 p-3">
+                <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">신체진찰</p>
+                <p className="text-lg font-bold text-black">{formatPhase(phases.physicalExamSeconds)}</p>
+                <p className="text-[10px] text-neutral-400 mt-1">진찰 시작 ~ 진찰 완료</p>
+              </div>
+              <div className="rounded-xl border border-neutral-100 p-3">
+                <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">교육·마무리</p>
+                <p className="text-lg font-bold text-black">{formatPhase(phases.educationSeconds)}</p>
+                <p className="text-[10px] text-neutral-400 mt-1">진찰 완료 ~ 진료 종료</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {scoreResult && (
           <>

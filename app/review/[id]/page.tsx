@@ -20,14 +20,13 @@ export default function ReviewPage() {
     setScoreResult,
     archiveCurrentSession,
     reset,
-    timeRemaining,
+    totalElapsedSeconds,
+    phaseDurations,
   } = useSessionStore();
 
   const [scoring, setScoring] = useState(false);
   const [autoArchived, setAutoArchived] = useState(false);
   const [activeTab, setActiveTab] = useState<'checklist' | 'log'>('checklist');
-
-  const elapsedSeconds = 720 - timeRemaining;
 
   const fetchScore = useCallback(async () => {
     if (!caseSpec || scoreResult) return;
@@ -78,6 +77,11 @@ export default function ReviewPage() {
   }
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const formatPhase = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = Math.max(0, Math.round(sec % 60));
+    return `${m}분 ${s}초`;
+  };
 
   const ppiTotal = scoreResult
     ? scoreResult.ppi_score.opening + scoreResult.ppi_score.empathy + scoreResult.ppi_score.summary + scoreResult.ppi_score.closure
@@ -95,7 +99,7 @@ export default function ReviewPage() {
           </div>
           <div className="text-right">
             <p className="text-xs text-neutral-400">소요시간</p>
-            <p className="text-sm font-mono font-bold text-black">{formatTime(elapsedSeconds)}</p>
+            <p className="text-sm font-mono font-bold text-black">{formatTime(totalElapsedSeconds)}</p>
           </div>
         </div>
       </header>
@@ -130,6 +134,31 @@ export default function ReviewPage() {
             )}
           </div>
         </div>
+
+        {phaseDurations && (
+          <div className="border border-neutral-100 rounded-2xl p-5 bg-white">
+            <h2 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-4">
+              단계별 소요 시간
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-neutral-100 p-3">
+                <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">병력청취</p>
+                <p className="text-lg font-bold text-black">{formatPhase(phaseDurations.historyTakingSeconds)}</p>
+                <p className="text-[10px] text-neutral-400 mt-1">시작 ~ 신체진찰 버튼</p>
+              </div>
+              <div className="rounded-xl border border-neutral-100 p-3">
+                <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">신체진찰</p>
+                <p className="text-lg font-bold text-black">{formatPhase(phaseDurations.physicalExamSeconds)}</p>
+                <p className="text-[10px] text-neutral-400 mt-1">진찰 시작 ~ 진찰 완료</p>
+              </div>
+              <div className="rounded-xl border border-neutral-100 p-3">
+                <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">교육·마무리</p>
+                <p className="text-lg font-bold text-black">{formatPhase(phaseDurations.educationSeconds)}</p>
+                <p className="text-[10px] text-neutral-400 mt-1">진찰 완료 ~ 진료 종료</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 채점 로딩 */}
         {scoring && (
