@@ -12,6 +12,7 @@ function getOpenAIClient() {
 type Body =
   | { sessionId: string; message: string }
   | {
+      sessionId?: string;
       message: string;
       caseSpec: CaseSpec;
       conversationHistory: Message[];
@@ -30,16 +31,22 @@ export async function POST(req: NextRequest) {
 
     if (sessionId) {
       const s = getChatSession(sessionId);
-      if (!s) {
+      if (s) {
+        caseSpec = s.caseSpec;
+        difficulty = s.difficulty;
+        conversationHistory = s.conversationHistory;
+        message = body.message;
+      } else if ('caseSpec' in body && body.caseSpec) {
+        caseSpec = body.caseSpec;
+        difficulty = body.difficulty;
+        conversationHistory = body.conversationHistory ?? [];
+        message = body.message;
+      } else {
         return NextResponse.json(
           { error: '세션을 찾을 수 없습니다. 세션을 다시 시작해주세요.' },
           { status: 404 }
         );
       }
-      caseSpec = s.caseSpec;
-      difficulty = s.difficulty;
-      conversationHistory = s.conversationHistory;
-      message = body.message;
     } else if ('caseSpec' in body && body.caseSpec) {
       caseSpec = body.caseSpec;
       difficulty = body.difficulty;

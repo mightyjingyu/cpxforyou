@@ -52,6 +52,8 @@ function isMeaningfulDoctorInput(text: string): boolean {
 export default function VoiceEngine({ onVoiceStateChange, active }: Props) {
   const caseSpec = useSessionStore((s) => s.caseSpec);
   const sessionId = useSessionStore((s) => s.sessionId);
+  const difficulty = useSessionStore((s) => s.difficulty);
+  const conversationHistory = useSessionStore((s) => s.conversationHistory);
   const sessionStatus = useSessionStore((s) => s.sessionStatus);
   const addMessage = useSessionStore((s) => s.addMessage);
 
@@ -104,6 +106,9 @@ export default function VoiceEngine({ onVoiceStateChange, active }: Props) {
         body: JSON.stringify({
           sessionId,
           message: transcript,
+          caseSpec,
+          difficulty,
+          conversationHistory,
         }),
       });
 
@@ -182,7 +187,7 @@ export default function VoiceEngine({ onVoiceStateChange, active }: Props) {
 
       return patientFull;
     },
-    [caseSpec?.patient.gender, sessionId, updateVoiceState]
+    [caseSpec, caseSpec?.patient.gender, conversationHistory, difficulty, sessionId, updateVoiceState]
   );
 
   const processRecording = useCallback(async () => {
