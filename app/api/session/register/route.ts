@@ -10,9 +10,10 @@ export async function POST(req: NextRequest) {
       sessionId?: string;
       caseSpec?: CaseSpec;
       difficulty?: 'easy' | 'normal' | 'hard';
+      friendliness?: 'cooperative' | 'normal' | 'uncooperative';
     };
 
-    const { sessionId, caseSpec, difficulty } = body;
+    const { sessionId, caseSpec, difficulty, friendliness = 'normal' } = body;
     if (!sessionId || !caseSpec || !difficulty) {
       return NextResponse.json(
         { error: 'sessionId, caseSpec, difficulty가 필요합니다.' },
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    registerChatSession(sessionId, caseSpec, difficulty);
+    registerChatSession(sessionId, caseSpec, difficulty, friendliness);
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error('session register error:', e);

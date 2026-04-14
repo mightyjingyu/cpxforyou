@@ -29,7 +29,7 @@ export default function HomePage() {
       <div className="relative z-10 flex-1 flex flex-col h-full border-x border-black max-w-6xl mx-auto w-full bg-transparent">
         {/* Header */}
         <header className="px-8 py-5 flex items-center justify-between border-b border-black bg-white/70 backdrop-blur-xl sticky top-0 w-full z-50">
-          <span className="text-sm font-bold tracking-tight text-black uppercase">CPX FOR YOU</span>
+          <span className="text-sm font-bold tracking-tight text-black uppercase">YOU ZERO</span>
           <span className="text-xs text-black font-medium tracking-wide">의대생 실전 시뮬레이터</span>
         </header>
 
@@ -43,7 +43,7 @@ export default function HomePage() {
             {/* Title */}
             <div className="mb-12 w-full border-b border-black pb-8 relative z-10">
               <h1 className="text-6xl font-black tracking-tighter text-black mb-4 leading-[0.9] uppercase">
-                CPX<br/>For You
+                YOU<br/>ZERO
               </h1>
               <p className="text-sm font-medium text-black/60 leading-relaxed max-w-[260px] mx-auto tracking-tight">
                 AI 환자와 음성으로 진행하는<br />CPX 실기시험 실전 시뮬레이터

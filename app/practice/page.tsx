@@ -19,6 +19,7 @@ export default function PracticePage() {
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [friendliness, setFriendliness] = useState<Friendliness>('normal');
   const [timerMode, setTimerMode] = useState<TimerMode>('countdown');
+  const [interactionMode, setInteractionMode] = useState<'voice' | 'text'>('voice');
 
   const handleStartSession = async () => {
     setLoading(true);
@@ -53,6 +54,10 @@ export default function PracticePage() {
           persona_template_id: 'default_v1',
         }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || '케이스 생성 API 호출 실패');
+      }
       const data = await res.json();
       const caseSpec: CaseSpec = data.caseSpec;
       const sessionId = uuidv4();
@@ -60,7 +65,7 @@ export default function PracticePage() {
       const reg = await fetch('/api/session/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, caseSpec, difficulty: selectedDifficulty }),
+        body: JSON.stringify({ sessionId, caseSpec, difficulty: selectedDifficulty, friendliness }),
       });
       if (!reg.ok) {
         const err = await reg.json().catch(() => ({}));
@@ -68,7 +73,7 @@ export default function PracticePage() {
       }
 
       startSession(caseSpec, sessionId, selectedDifficulty, timerMode);
-      router.push(`/session/${sessionId}`);
+      router.push(interactionMode === 'voice' ? `/session/${sessionId}` : `/session-message/${sessionId}`);
     } catch (error) {
       console.error('Failed to start session:', error);
       alert('케이스 생성에 실패했습니다. 다시 시도해주세요.');
@@ -217,6 +222,38 @@ export default function PracticePage() {
             )}
 
             <div className="relative z-10 pt-2 border-t border-black/10">
+              <label className="text-xs font-black text-black uppercase tracking-widest mb-3 block">진행 방식</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                <button
+                  type="button"
+                  onClick={() => setInteractionMode('voice')}
+                  className={`text-left rounded-2xl border p-4 transition-all ${
+                    interactionMode === 'voice'
+                      ? 'border-black bg-black text-white shadow-md'
+                      : 'border-black/20 bg-white/50 hover:border-black/40'
+                  }`}
+                >
+                  <p className="text-sm font-black mb-1">음성 세션</p>
+                  <p className={`text-xs font-medium leading-relaxed ${interactionMode === 'voice' ? 'text-white/80' : 'text-black/50'}`}>
+                    마이크를 눌러 환자와 음성으로 대화합니다.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInteractionMode('text')}
+                  className={`text-left rounded-2xl border p-4 transition-all ${
+                    interactionMode === 'text'
+                      ? 'border-black bg-black text-white shadow-md'
+                      : 'border-black/20 bg-white/50 hover:border-black/40'
+                  }`}
+                >
+                  <p className="text-sm font-black mb-1">메시지 세션</p>
+                  <p className={`text-xs font-medium leading-relaxed ${interactionMode === 'text' ? 'text-white/80' : 'text-black/50'}`}>
+                    채팅창에 텍스트를 입력해 환자와 대화합니다.
+                  </p>
+                </button>
+              </div>
+
               <label className="text-xs font-black text-black uppercase tracking-widest mb-3 block">타이머 방식</label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button

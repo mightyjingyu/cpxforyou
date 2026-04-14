@@ -35,8 +35,20 @@ interface SessionState {
   scoreResult: ScoreResult | null;
   phaseDurations: SessionPhaseDurations | null;
   totalElapsedSeconds: number;
+  sessionPhase: 'history' | 'physical' | 'education' | 'completed';
+  historyTakingElapsed: number;
+  physicalExamElapsed: number;
+  educationElapsed: number;
+  examTimeDeductionSeconds: number;
 
   archivedSessions: SessionData[];
+  memoTemplates: Array<{
+    id: string;
+    name: string;
+    content: string;
+    clinicalPresentation?: string;
+    updatedAt: number;
+  }>;
 
   startSession: (
     caseSpec: CaseSpec,
@@ -54,44 +66,28 @@ interface SessionState {
   setMemo: (content: string) => void;
   markPhysicalExamDone: () => void;
   recordPhysicalExamStarted: () => void;
+  completeHistoryTaking: () => void;
+  completeEducation: () => void;
+  setExamTimeDeductionSeconds: (seconds: number) => void;
   setSessionStatus: (status: 'idle' | 'loading' | 'active' | 'ended') => void;
   setScoreResult: (result: ScoreResult) => void;
   archiveCurrentSession: () => void;
+  saveMemoTemplate: (payload: {
+    name: string;
+    content: string;
+    clinicalPresentation?: string;
+  }) => void;
+  updateMemoTemplate: (
+    templateId: string,
+    payload: { name: string; content: string; clinicalPresentation?: string }
+  ) => void;
+  applyMemoTemplate: (templateId: string) => void;
   reset: () => void;
 }
 
-function computePhaseDurations(
-  sessionClockStartedAt: number | null,
-  physicalExamStartedAt: number | null,
-  physicalExamEndedAt: number | null,
-  endTime: number
-): SessionPhaseDurations {
-  let historyTakingSeconds = 0;
-  let physicalExamSeconds = 0;
-  let educationSeconds = 0;
-
-  if (!sessionClockStartedAt) {
-    return { historyTakingSeconds: 0, physicalExamSeconds: 0, educationSeconds: 0 };
-  }
-
-  const t0 = sessionClockStartedAt;
-  const t1 = physicalExamStartedAt;
-  const t2 = physicalExamEndedAt;
-
-  if (t1) {
-    historyTakingSeconds = Math.max(0, Math.round((t1 - t0) / 1000));
-    if (t2) {
-      physicalExamSeconds = Math.max(0, Math.round((t2 - t1) / 1000));
-      educationSeconds = Math.max(0, Math.round((endTime - t2) / 1000));
-    } else {
-      physicalExamSeconds = Math.max(0, Math.round((endTime - t1) / 1000));
-    }
-  } else {
-    historyTakingSeconds = Math.max(0, Math.round((endTime - t0) / 1000));
-  }
-
-  return { historyTakingSeconds, physicalExamSeconds, educationSeconds };
-}
+const DEFAULT_EXAM_DEDUCTION_SECONDS = 240;
+const MIN_EXAM_DEDUCTION_SECONDS = 30;
+const MAX_EXAM_DEDUCTION_SECONDS = 600;
 
 export const useSessionStore = create<SessionState>()(
   persist(
@@ -115,7 +111,13 @@ export const useSessionStore = create<SessionState>()(
       scoreResult: null,
       phaseDurations: null,
       totalElapsedSeconds: 0,
+      sessionPhase: 'history',
+      historyTakingElapsed: 0,
+      physicalExamElapsed: 0,
+      educationElapsed: 0,
+      examTimeDeductionSeconds: DEFAULT_EXAM_DEDUCTION_SECONDS,
       archivedSessions: [],
+      memoTemplates: [],
 
       startSession: (caseSpec, sessionId, difficulty, timerMode = 'countdown') =>
         set({
@@ -138,6 +140,10 @@ export const useSessionStore = create<SessionState>()(
           scoreResult: null,
           phaseDurations: null,
           totalElapsedSeconds: 0,
+          sessionPhase: 'history',
+          historyTakingElapsed: 0,
+          physicalExamElapsed: 0,
+          educationElapsed: 0,
         }),
 
       startTimer: () =>
@@ -169,6 +175,10 @@ export const useSessionStore = create<SessionState>()(
           physicalExamDone: false,
           phaseDurations: null,
           totalElapsedSeconds: 0,
+          sessionPhase: 'history',
+          historyTakingElapsed: 0,
+          physicalExamElapsed: 0,
+          educationElapsed: 0,
         }),
 
       addMessage: (message) =>
@@ -191,22 +201,35 @@ export const useSessionStore = create<SessionState>()(
           ) {
             return state;
           }
+          const phaseUpdate =
+            state.sessionPhase === 'history'
+              ? { historyTakingElapsed: state.historyTakingElapsed + 1 }
+              : state.sessionPhase === 'physical'
+                ? { physicalExamElapsed: state.physicalExamElapsed + 1 }
+                : state.sessionPhase === 'education'
+                  ? { educationElapsed: state.educationElapsed + 1 }
+                  : {};
+
           if (state.timerMode === 'countdown') {
             if (state.timeRemaining <= 0) return state;
-            return { timeRemaining: state.timeRemaining - 1 };
+            return {
+              timeRemaining: state.timeRemaining - 1,
+              ...phaseUpdate,
+            };
           }
-          return { countUpElapsed: state.countUpElapsed + 1 };
+          return {
+            countUpElapsed: state.countUpElapsed + 1,
+            ...phaseUpdate,
+          };
         }),
 
       endSession: () => {
         const state = get();
-        const now = Date.now();
-        const phaseDurations = computePhaseDurations(
-          state.sessionClockStartedAt,
-          state.physicalExamStartedAt,
-          state.physicalExamEndedAt,
-          now
-        );
+        const phaseDurations: SessionPhaseDurations = {
+          historyTakingSeconds: state.historyTakingElapsed,
+          physicalExamSeconds: state.physicalExamElapsed,
+          educationSeconds: state.educationElapsed,
+        };
         const totalElapsed =
           state.timerMode === 'countdown'
             ? state.timerStarted
@@ -225,15 +248,42 @@ export const useSessionStore = create<SessionState>()(
       setMemo: (content) => set({ memoContent: content }),
 
       markPhysicalExamDone: () =>
-        set({
+        set((state) => ({
           physicalExamDone: true,
-          physicalExamEndedAt: Date.now(),
-        }),
+          physicalExamEndedAt: state.physicalExamEndedAt ?? Date.now(),
+          sessionPhase: state.sessionPhase === 'physical' ? 'education' : state.sessionPhase,
+        })),
 
       recordPhysicalExamStarted: () =>
         set((state) => {
           if (state.physicalExamStartedAt != null) return state;
-          return { physicalExamStartedAt: Date.now() };
+          return {
+            physicalExamStartedAt: Date.now(),
+            sessionPhase: 'physical',
+          };
+        }),
+
+      completeHistoryTaking: () =>
+        set((state) => {
+          if (state.sessionPhase !== 'history') return state;
+          return {
+            sessionPhase: 'physical',
+            physicalExamStartedAt: state.physicalExamStartedAt ?? Date.now(),
+          };
+        }),
+
+      completeEducation: () =>
+        set((state) => {
+          if (state.sessionPhase !== 'education') return state;
+          return { sessionPhase: 'completed' };
+        }),
+
+      setExamTimeDeductionSeconds: (seconds) =>
+        set({
+          examTimeDeductionSeconds: Math.min(
+            MAX_EXAM_DEDUCTION_SECONDS,
+            Math.max(MIN_EXAM_DEDUCTION_SECONDS, seconds)
+          ),
         }),
 
       setSessionStatus: (status) => set({ sessionStatus: status }),
@@ -266,6 +316,59 @@ export const useSessionStore = create<SessionState>()(
         }));
       },
 
+      saveMemoTemplate: ({ name, content, clinicalPresentation }) =>
+        set((state) => {
+          const trimmedName = name.trim();
+          const trimmedContent = content.trim();
+          if (!trimmedName || !trimmedContent) return state;
+          const normalizedClinical =
+            !clinicalPresentation || clinicalPresentation === '전체 보기'
+              ? undefined
+              : clinicalPresentation;
+          const now = Date.now();
+          const nextTemplate = {
+            id: crypto.randomUUID(),
+            name: trimmedName,
+            content: trimmedContent,
+            clinicalPresentation: normalizedClinical,
+            updatedAt: now,
+          };
+          return {
+            memoTemplates: [nextTemplate, ...state.memoTemplates].slice(0, 100),
+          };
+        }),
+
+      updateMemoTemplate: (templateId, { name, content, clinicalPresentation }) =>
+        set((state) => {
+          const trimmedName = name.trim();
+          const trimmedContent = content.trim();
+          if (!trimmedName || !trimmedContent) return state;
+          const normalizedClinical =
+            !clinicalPresentation || clinicalPresentation === '전체 보기'
+              ? undefined
+              : clinicalPresentation;
+          return {
+            memoTemplates: state.memoTemplates.map((tpl) =>
+              tpl.id === templateId
+                ? {
+                    ...tpl,
+                    name: trimmedName,
+                    content: trimmedContent,
+                    clinicalPresentation: normalizedClinical,
+                    updatedAt: Date.now(),
+                  }
+                : tpl
+            ),
+          };
+        }),
+
+      applyMemoTemplate: (templateId) =>
+        set((state) => {
+          const picked = state.memoTemplates.find((t) => t.id === templateId);
+          if (!picked) return state;
+          return { memoContent: picked.content };
+        }),
+
       reset: () =>
         set({
           caseSpec: null,
@@ -286,12 +389,18 @@ export const useSessionStore = create<SessionState>()(
           scoreResult: null,
           phaseDurations: null,
           totalElapsedSeconds: 0,
+          sessionPhase: 'history',
+          historyTakingElapsed: 0,
+          physicalExamElapsed: 0,
+          educationElapsed: 0,
         }),
     }),
     {
       name: 'cpx-session-storage',
       partialize: (state) => ({
         archivedSessions: state.archivedSessions,
+        examTimeDeductionSeconds: state.examTimeDeductionSeconds,
+        memoTemplates: state.memoTemplates,
       }),
     }
   )

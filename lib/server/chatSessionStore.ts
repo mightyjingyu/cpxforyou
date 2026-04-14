@@ -4,6 +4,7 @@ import { CaseSpec, Message } from '@/types';
 export type StoredChatSession = {
   caseSpec: CaseSpec;
   difficulty: 'easy' | 'normal' | 'hard';
+  friendliness: 'cooperative' | 'normal' | 'uncooperative';
   conversationHistory: Message[];
   updatedAt: number;
 };
@@ -21,12 +22,14 @@ function pruneStale() {
 export function registerChatSession(
   sessionId: string,
   caseSpec: CaseSpec,
-  difficulty: 'easy' | 'normal' | 'hard'
+  difficulty: 'easy' | 'normal' | 'hard',
+  friendliness: 'cooperative' | 'normal' | 'uncooperative' = 'normal'
 ): void {
   pruneStale();
   sessions.set(sessionId, {
     caseSpec,
     difficulty,
+    friendliness,
     conversationHistory: [],
     updatedAt: Date.now(),
   });

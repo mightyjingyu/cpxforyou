@@ -11,6 +11,8 @@ type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 interface Props {
   onVoiceStateChange: (state: VoiceState) => void;
   active: boolean;
+  sessionPhase?: 'history' | 'physical' | 'education' | 'completed';
+  onPhysicalExamIntent?: (transcript: string) => Promise<void> | void;
 }
 
 const MIN_BYTES = 400;
@@ -50,11 +52,22 @@ function isMeaningfulDoctorInput(text: string): boolean {
   return hasSubstance;
 }
 
-export default function VoiceEngine({ onVoiceStateChange, active }: Props) {
+function looksLikePhysicalExamIntent(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) return false;
+  return /(검사|진찰|이학적|청진|촉진|타진|시진|복부|심장|폐|신경학|반사|동공|경부|사지|혈액검사|소변검사|엑스레이|x-ray|ct|mri|초음파|심전도|내시경)/i.test(
+    normalized
+  );
+}
+
+export default function VoiceEngine({
+  onVoiceStateChange,
+  active,
+  sessionPhase = 'history',
+  onPhysicalExamIntent,
+}: Props) {
   const caseSpec = useSessionStore((s) => s.caseSpec);
   const sessionId = useSessionStore((s) => s.sessionId);
-  const difficulty = useSessionStore((s) => s.difficulty);
-  const conversationHistory = useSessionStore((s) => s.conversationHistory);
   const sessionStatus = useSessionStore((s) => s.sessionStatus);
   const addMessage = useSessionStore((s) => s.addMessage);
 
@@ -66,6 +79,7 @@ export default function VoiceEngine({ onVoiceStateChange, active }: Props) {
   const chunksRef = useRef<Blob[]>([]);
   const mimeRef = useRef<string>('audio/webm');
   const processingRef = useRef(false);
+  const toggleLockRef = useRef(false);
 
   const updateVoiceState = useCallback(
     (state: VoiceState) => {
@@ -107,9 +121,6 @@ export default function VoiceEngine({ onVoiceStateChange, active }: Props) {
         body: JSON.stringify({
           sessionId,
           message: transcript,
-          caseSpec,
-          difficulty,
-          conversationHistory,
         }),
       });
 
@@ -188,7 +199,7 @@ export default function VoiceEngine({ onVoiceStateChange, active }: Props) {
 
       return patientFull;
     },
-    [caseSpec, caseSpec?.patient.gender, conversationHistory, difficulty, sessionId, updateVoiceState]
+    [caseSpec, sessionId, updateVoiceState]
   );
 
   const processRecording = useCallback(async () => {
@@ -232,12 +243,14 @@ export default function VoiceEngine({ onVoiceStateChange, active }: Props) {
       };
       addMessage(userMsg);
 
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        const u = new SpeechSynthesisUtterance('음…');
-        u.lang = 'ko-KR';
-        u.volume = 0.22;
-        u.rate = 1.55;
-        window.speechSynthesis.speak(u);
+      if (
+        sessionPhase === 'physical' &&
+        !useSessionStore.getState().physicalExamDone &&
+        looksLikePhysicalExamIntent(transcript)
+      ) {
+        await onPhysicalExamIntent?.(transcript);
+        updateVoiceState('idle');
+        return;
       }
 
       const patientText = await streamLlmAndPlayTts(transcript);
@@ -258,39 +271,56 @@ export default function VoiceEngine({ onVoiceStateChange, active }: Props) {
     } finally {
       processingRef.current = false;
     }
-  }, [addMessage, sessionId, stopRecorderToBlob, streamLlmAndPlayTts, updateVoiceState]);
+  }, [
+    addMessage,
+    sessionId,
+    sessionPhase,
+    stopRecorderToBlob,
+    streamLlmAndPlayTts,
+    updateVoiceState,
+    onPhysicalExamIntent,
+  ]);
+
+  const startRecording = useCallback(async () => {
+    if (sessionStatus !== 'active' || !caseSpec) return;
+    if (voiceState === 'thinking' || voiceState === 'speaking' || voiceState === 'listening') return;
+
+    setErrorMsg('');
+    try {
+      if (!streamRef.current) {
+        streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+      const stream = streamRef.current;
+      const mime = pickRecorderMime();
+      mimeRef.current = mime || 'audio/webm';
+      chunksRef.current = [];
+      const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      mr.ondataavailable = (ev) => {
+        if (ev.data.size > 0) chunksRef.current.push(ev.data);
+      };
+      mr.start(250);
+      mediaRecorderRef.current = mr;
+      updateVoiceState('listening');
+    } catch (err) {
+      console.error(err);
+      setErrorMsg('마이크 권한이 필요합니다.');
+      updateVoiceState('idle');
+    }
+  }, [caseSpec, sessionStatus, voiceState, updateVoiceState]);
+
+  const stopRecording = useCallback(async () => {
+    if (sessionStatus !== 'active') return;
+    if (mediaRecorderRef.current?.state !== 'recording') return;
+    await processRecording();
+  }, [sessionStatus, processRecording]);
 
   const onPointerDown = useCallback(
     async (e: React.PointerEvent<HTMLButtonElement>) => {
-      if (sessionStatus !== 'active' || !caseSpec) return;
-      if (voiceState === 'thinking' || voiceState === 'speaking' || voiceState === 'listening') return;
-
       e.preventDefault();
       e.currentTarget.setPointerCapture(e.pointerId);
-      setErrorMsg('');
-
-      try {
-        if (!streamRef.current) {
-          streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-        }
-        const stream = streamRef.current;
-        const mime = pickRecorderMime();
-        mimeRef.current = mime || 'audio/webm';
-        chunksRef.current = [];
-        const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-        mr.ondataavailable = (ev) => {
-          if (ev.data.size > 0) chunksRef.current.push(ev.data);
-        };
-        mr.start(250);
-        mediaRecorderRef.current = mr;
-        updateVoiceState('listening');
-      } catch (err) {
-        console.error(err);
-        setErrorMsg('마이크 권한이 필요합니다.');
-        updateVoiceState('idle');
-      }
+      await startRecording();
     },
-    [caseSpec, sessionStatus, voiceState, updateVoiceState]
+    [startRecording]
   );
 
   const onPointerUp = useCallback(
@@ -302,10 +332,53 @@ export default function VoiceEngine({ onVoiceStateChange, active }: Props) {
       } catch {
         /* already released */
       }
-      await processRecording();
+      await stopRecording();
     },
-    [sessionStatus, processRecording]
+    [sessionStatus, stopRecording]
   );
+
+  useEffect(() => {
+    const isToggleKey = (ev: KeyboardEvent) =>
+      ev.key === '\\' ||
+      ev.key === '₩' ||
+      ev.key === '`' ||
+      ev.key === '~' ||
+      ev.code === 'Backslash' ||
+      ev.code === 'IntlRo' ||
+      ev.code === 'Backquote';
+
+    const keydownBlocker = (ev: KeyboardEvent) => {
+      if (!active || !isToggleKey(ev)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+
+    const keyupToggle = async (ev: KeyboardEvent) => {
+      if (!active || !isToggleKey(ev)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (toggleLockRef.current) return;
+      toggleLockRef.current = true;
+      try {
+        if (mediaRecorderRef.current?.state === 'recording') {
+          await stopRecording();
+        } else {
+          await startRecording();
+        }
+      } finally {
+        setTimeout(() => {
+          toggleLockRef.current = false;
+        }, 120);
+      }
+    };
+
+    window.addEventListener('keydown', keydownBlocker, true);
+    window.addEventListener('keyup', keyupToggle, true);
+    return () => {
+      window.removeEventListener('keydown', keydownBlocker, true);
+      window.removeEventListener('keyup', keyupToggle, true);
+    };
+  }, [active, startRecording, stopRecording]);
 
   useEffect(() => {
     if (!active) {
@@ -362,10 +435,10 @@ export default function VoiceEngine({ onVoiceStateChange, active }: Props) {
             ? voiceState === 'thinking'
               ? '환자가 생각 중입니다…'
               : '환자 음성 재생 중…'
-            : '누른 채로 말씀하세요'}
+            : '누른 채로 말하기 / ₩ ` ~ 키 토글'}
         </p>
         {!busy && (
-           <p className="text-[9px] font-bold text-black/30 tracking-widest uppercase">버튼을 떼면 전송됩니다</p>
+           <p className="text-[9px] font-bold text-black/30 tracking-widest uppercase">버튼 떼기 또는 ₩/`/~ 재입력 시 전송</p>
         )}
       </div>
 

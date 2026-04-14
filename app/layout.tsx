@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CPX Master — 의대생 실전 CPX 시뮬레이터",
+  title: "YOU ZERO — 의대생 실전 CPX 시뮬레이터",
   description: "국가의사시험 실기시험 CPX(임상수행능력시험) AI 환자와 실전 연습",
 };
 

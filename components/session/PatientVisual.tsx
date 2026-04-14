@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { CaseSpec } from '@/types';
 
 interface Props {
@@ -15,7 +16,23 @@ const PATIENT_AVATARS: Record<string, string> = {
 };
 
 export default function PatientVisual({ caseSpec, voiceState, timerStarted = true }: Props) {
+  const [maleAvatarFailed, setMaleAvatarFailed] = useState(false);
+  const [femaleAvatarFailed, setFemaleAvatarFailed] = useState(false);
+  const isMale = caseSpec.patient.gender === '남';
+  const isFemale = caseSpec.patient.gender === '여';
   const avatar = PATIENT_AVATARS[caseSpec.patient.gender] || '🧑';
+  const maleAvatarSrc =
+    caseSpec.patient.age >= 60
+      ? '/avatars/male-60-plus.png'
+      : caseSpec.patient.age >= 40
+        ? '/avatars/male-40-59.png'
+        : '/avatars/male-22-39.png';
+  const femaleAvatarSrc =
+    caseSpec.patient.age >= 60
+      ? '/avatars/female-60-plus.png'
+      : caseSpec.patient.age >= 40
+        ? '/avatars/female-40-59.png'
+        : '/avatars/female-22-39.png';
 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-8">
@@ -28,7 +45,23 @@ export default function PatientVisual({ caseSpec, voiceState, timerStarted = tru
               : 'bg-white/40 border-black/30 shadow-sm'
           }`}
         >
-          {avatar}
+          {isMale && !maleAvatarFailed ? (
+            <img
+              src={maleAvatarSrc}
+              alt="male patient avatar"
+              className="w-full h-full object-cover"
+              onError={() => setMaleAvatarFailed(true)}
+            />
+          ) : isFemale && !femaleAvatarFailed ? (
+            <img
+              src={femaleAvatarSrc}
+              alt="female patient avatar"
+              className="w-full h-full object-cover"
+              onError={() => setFemaleAvatarFailed(true)}
+            />
+          ) : (
+            avatar
+          )}
           <div className="absolute inset-0 border border-white/60 pointer-events-none rounded-full" />
         </div>
 

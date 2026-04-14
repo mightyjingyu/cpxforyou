@@ -7,8 +7,6 @@ import { useSessionStore } from '@/store/sessionStore';
 import Timer from '@/components/session/Timer';
 import PatientVisual from '@/components/session/PatientVisual';
 import MemoPanel from '@/components/session/MemoPanel';
-import PhysicalExamButton from '@/components/session/PhysicalExamButton';
-import InstructionPanel from '@/components/session/InstructionPanel';
 import VoiceEngine from '@/components/session/VoiceEngine';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
@@ -21,28 +19,27 @@ export default function SessionPage() {
     sessionId,
     deductTime,
     markPhysicalExamDone,
-    recordPhysicalExamStarted,
+    completeHistoryTaking,
+    completeEducation,
     addMessage,
     endSession,
     physicalExamDone,
     timerStarted,
+    sessionPhase,
+    examTimeDeductionSeconds,
+    setExamTimeDeductionSeconds,
   } = useSessionStore();
 
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [showEndConfirm, setShowEndConfirm] = useState(false);
-  const [examResultText, setExamResultText] = useState('');
+  const [examResultTexts, setExamResultTexts] = useState<string[]>([]);
+  const [showPhysicalExamGuide, setShowPhysicalExamGuide] = useState(false);
 
   useEffect(() => {
     if (!caseSpec || sessionStatus === 'idle') {
       router.replace('/');
     }
   }, [caseSpec, sessionStatus, router]);
-
-  useEffect(() => {
-    if (!physicalExamDone) {
-      setExamResultText('');
-    }
-  }, [physicalExamDone]);
 
   const handleTimeUp = useCallback(() => {
     endSession();
@@ -52,16 +49,7 @@ export default function SessionPage() {
   const handlePhysicalExamTranscript = useCallback(async (transcript: string) => {
     if (!caseSpec) return;
 
-    addMessage({
-      id: uuidv4(),
-      role: 'user',
-      content: transcript,
-      timestamp: Date.now(),
-    });
-
-    if (physicalExamDone) return;
-    markPhysicalExamDone();
-    deductTime(240); // 4분 차감
+    if (physicalExamDone || sessionPhase !== 'physical') return;
 
     try {
       const examRes = await fetch('/api/exam', {
@@ -72,7 +60,7 @@ export default function SessionPage() {
       const examData = (await examRes.json()) as { findingText?: string; error?: string };
       const findingText = examData.findingText?.trim() || caseSpec.physical_exam_findings;
       const findings = `[진찰소견] ${findingText}`;
-      setExamResultText(findings);
+      setExamResultTexts((prev) => [...prev, findings]);
       addMessage({
         id: uuidv4(),
         role: 'patient',
@@ -82,7 +70,7 @@ export default function SessionPage() {
     } catch (error) {
       console.error(error);
       const fallback = `[진찰소견] ${caseSpec.physical_exam_findings}`;
-      setExamResultText(fallback);
+      setExamResultTexts((prev) => [...prev, fallback]);
       addMessage({
         id: uuidv4(),
         role: 'patient',
@@ -90,7 +78,22 @@ export default function SessionPage() {
         timestamp: Date.now(),
       });
     }
-  }, [caseSpec, addMessage, physicalExamDone, markPhysicalExamDone, deductTime]);
+  }, [caseSpec, addMessage, physicalExamDone, sessionPhase]);
+
+  const handleHistoryComplete = useCallback(() => {
+    completeHistoryTaking();
+    setShowPhysicalExamGuide(true);
+  }, [completeHistoryTaking]);
+
+  const handlePhysicalComplete = useCallback(() => {
+    if (physicalExamDone || sessionPhase !== 'physical') return;
+    markPhysicalExamDone();
+    deductTime(examTimeDeductionSeconds);
+  }, [physicalExamDone, sessionPhase, markPhysicalExamDone, deductTime, examTimeDeductionSeconds]);
+
+  const handleEducationComplete = useCallback(() => {
+    completeEducation();
+  }, [completeEducation]);
 
   const handleEndSession = useCallback(() => {
     endSession();
@@ -125,7 +128,7 @@ export default function SessionPage() {
       {/* 상단 바 */}
       <header className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-black bg-white/70 backdrop-blur-xl relative z-50 shrink-0">
         <div className="flex flex-wrap items-center gap-3 min-w-0">
-          <span className="text-xs font-black text-black uppercase tracking-widest shrink-0">CPX Session</span>
+          <span className="text-xs font-black text-black uppercase tracking-widest shrink-0">YOU ZERO Session</span>
           <div className="w-1.5 h-1.5 bg-black rounded-full shrink-0 hidden sm:block" />
           <Timer onTimeUp={handleTimeUp} />
         </div>
@@ -139,25 +142,83 @@ export default function SessionPage() {
       </header>
 
       {/* 메인 콘텐츠 */}
-      <div className="flex-1 flex overflow-hidden min-h-0 relative z-10 w-full max-w-7xl mx-auto border-x border-black bg-transparent">
+      <div className="flex-1 flex overflow-hidden min-h-0 relative z-10 w-full max-w-[1450px] mx-auto border-x border-black bg-transparent">
         {/* 좌측: 환자 영역 */}
-        <div className="w-1/2 flex flex-col items-center justify-between p-8 border-r border-black relative">
+        <div className="w-1/2 flex flex-col p-6 border-r border-black relative">
           <div className="absolute inset-0 bg-white/30 backdrop-blur-sm -z-10" />
-          
-          <div className="flex-1 flex items-center justify-center w-full">
+
+          <div className="w-full flex items-start justify-start mb-3">
+            <div className="rounded-2xl border border-black bg-white/80 p-4 min-w-[290px]">
+              <p className="text-[10px] font-black tracking-widest uppercase text-black/50 mb-2">Patient / Vitals</p>
+              <p className="text-sm font-black">{caseSpec.patient.name} ({caseSpec.patient.age}세 / {caseSpec.patient.gender})</p>
+              <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono font-bold">
+                <span>BP {caseSpec.vitals.bp}</span>
+                <span>HR {caseSpec.vitals.hr}</span>
+                <span>RR {caseSpec.vitals.rr}</span>
+                <span>T {caseSpec.vitals.temp}°C</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="w-full flex items-center justify-center py-2">
             <PatientVisual caseSpec={caseSpec} voiceState={voiceState} timerStarted={timerStarted} />
           </div>
 
-          <div className="w-full mt-4 flex justify-center">
+          <div className="w-full mt-2 flex flex-col items-center gap-3">
             <VoiceEngine
               onVoiceStateChange={setVoiceState}
               active={sessionStatus === 'active' && timerStarted}
+              sessionPhase={sessionPhase}
+              onPhysicalExamIntent={handlePhysicalExamTranscript}
             />
+
+            <div className="w-full flex items-center justify-center gap-2">
+              <button
+                onClick={handleHistoryComplete}
+                disabled={!timerStarted || sessionPhase !== 'history'}
+                className="px-3 py-2 rounded-full border border-black text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-black hover:text-white transition-colors"
+              >
+                병력청취 완료
+              </button>
+              <button
+                onClick={handlePhysicalComplete}
+                disabled={!timerStarted || sessionPhase !== 'physical' || physicalExamDone}
+                className="px-3 py-2 rounded-full border border-black text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-black hover:text-white transition-colors"
+              >
+                신체진찰 완료
+              </button>
+              <button
+                onClick={handleEducationComplete}
+                disabled={!timerStarted || sessionPhase !== 'education'}
+                className="px-3 py-2 rounded-full border border-black text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-black hover:text-white transition-colors"
+              >
+                환자교육 완료
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs font-bold">
+              <span className="text-black/60">신체진찰 완료 시 차감</span>
+              <span className="px-2 py-1 rounded-full border border-black font-mono">{Math.floor(examTimeDeductionSeconds / 60)}:{String(examTimeDeductionSeconds % 60).padStart(2, '0')}</span>
+              <button
+                onClick={() => setExamTimeDeductionSeconds(examTimeDeductionSeconds + 30)}
+                className="w-7 h-7 rounded-full border border-black hover:bg-black hover:text-white transition-colors"
+                aria-label="차감 시간 증가"
+              >
+                ▲
+              </button>
+              <button
+                onClick={() => setExamTimeDeductionSeconds(examTimeDeductionSeconds - 30)}
+                className="w-7 h-7 rounded-full border border-black hover:bg-black hover:text-white transition-colors"
+                aria-label="차감 시간 감소"
+              >
+                ▼
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* 우측: 메모 + 신체진찰 */}
-        <div className="w-1/2 flex flex-col p-8 gap-6 min-h-0 relative">
+        {/* 우측: 메모 + 진찰소견 */}
+        <div className="w-1/2 flex flex-col p-6 gap-5 min-h-0 relative">
           <div className="absolute inset-0 bg-white/40 backdrop-blur-md -z-10" />
 
           <div className="flex-1 min-h-0 rounded-3xl border border-black bg-white/60 backdrop-blur-xl overflow-hidden glass shadow-sm relative">
@@ -166,29 +227,20 @@ export default function SessionPage() {
           </div>
 
           <div className="shrink-0 flex flex-col gap-4">
-            <PhysicalExamButton
-              onExamTranscript={handlePhysicalExamTranscript}
-              onPhysicalExamPressStart={recordPhysicalExamStarted}
-              active={sessionStatus === 'active' && timerStarted}
-            />
-            {examResultText && (
+            {sessionPhase === 'physical' && examResultTexts.length > 0 && (
               <div className="rounded-2xl border border-black bg-black text-white p-5 shadow-lg animate-in slide-in-from-bottom-2">
                 <p className="text-xs font-bold uppercase tracking-widest text-white/50 mb-2">신체진찰 결과</p>
-                <p className="text-sm font-medium leading-relaxed">{examResultText}</p>
+                <div className="space-y-2 max-h-44 overflow-auto">
+                  {examResultTexts.map((txt, idx) => (
+                    <p key={`${idx}-${txt.slice(0, 16)}`} className="text-sm font-medium leading-relaxed">
+                      {txt}
+                    </p>
+                  ))}
+                </div>
               </div>
             )}
           </div>
         </div>
-      </div>
-
-      {/* 하단 지시문 */}
-      <div className="border-t border-black bg-white/80 backdrop-blur-xl relative z-20">
-        <InstructionPanel
-          patientName={caseSpec.patient.name}
-          age={caseSpec.patient.age}
-          gender={caseSpec.patient.gender}
-          vitals={caseSpec.vitals}
-        />
       </div>
 
       {/* 종료 확인 모달 */}
@@ -213,6 +265,31 @@ export default function SessionPage() {
                 className="w-full py-4 rounded-full border border-black bg-white/50 text-black text-sm font-bold uppercase tracking-widest hover:bg-white transition-all active:scale-95"
               >
                 진료 계속하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPhysicalExamGuide && (
+        <div className="fixed inset-0 bg-white/10 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-white/90 backdrop-blur-2xl rounded-3xl border border-black shadow-[0_20px_60px_rgba(0,0,0,0.1)] w-full max-w-md p-8 text-center relative overflow-hidden">
+            <div className="absolute inset-0 border border-white/60 pointer-events-none rounded-3xl" />
+            <div className="text-3xl mb-4 relative z-10">🩺</div>
+            <h3 className="font-black text-xl text-black mb-3 relative z-10 tracking-tight">
+              신체진찰을 시작합니다
+            </h3>
+            <p className="text-sm text-black/70 mb-8 leading-relaxed font-medium relative z-10">
+              진행할 진찰을 하나하나 말씀하시면
+              <br />
+              그에 따른 소견을 드립니다.
+            </p>
+            <div className="flex flex-col gap-3 relative z-10">
+              <button
+                onClick={() => setShowPhysicalExamGuide(false)}
+                className="w-full py-4 rounded-full bg-black text-white text-sm font-bold uppercase tracking-widest hover:bg-black/90 transition-all active:scale-95 shadow-md"
+              >
+                확인
               </button>
             </div>
           </div>

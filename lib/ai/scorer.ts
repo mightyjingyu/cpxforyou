@@ -169,10 +169,10 @@ export async function scoreSession(
     (finalEval.management_plan_treatment.correct ? 1 : 0) +
     (finalEval.patient_education.correct ? 1 : 0);
   const answerRatio = answerCorrectCount / 4;
-  const composite = answerRatio * 0.7 + checklistRatio * 0.3;
+  const composite = answerRatio * 0.1 + checklistRatio * 0.9;
   const grade = toGrade(composite);
   const normalizedScore = Math.round(composite * 100);
-  const gradeBasis = `최종단계 정답률 ${(answerRatio * 100).toFixed(0)}% (가중치 70%) + 체크리스트 일치율 ${(checklistRatio * 100).toFixed(0)}% (가중치 30%).`;
+  const gradeBasis = `최종단계 정답률 ${(answerRatio * 100).toFixed(0)}% (가중치 10%) + 체크리스트 일치율 ${(checklistRatio * 100).toFixed(0)}% (가중치 90%).`;
 
   return {
     checklist_results: checklist,

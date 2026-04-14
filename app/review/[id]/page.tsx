@@ -15,7 +15,6 @@ export default function ReviewPage() {
     conversationHistory,
     memoContent,
     sessionStatus,
-    sessionId,
     scoreResult,
     setScoreResult,
     archiveCurrentSession,
@@ -82,10 +81,6 @@ export default function ReviewPage() {
     const s = Math.max(0, Math.round(sec % 60));
     return `${m}분 ${s}초`;
   };
-
-  const ppiTotal = scoreResult
-    ? scoreResult.ppi_score.opening + scoreResult.ppi_score.empathy + scoreResult.ppi_score.summary + scoreResult.ppi_score.closure
-    : null;
 
   return (
     <div className="min-h-screen bg-white">
@@ -170,34 +165,6 @@ export default function ReviewPage() {
 
         {scoreResult && (
           <>
-            {/* PPI 점수 */}
-            <div className="border border-neutral-100 rounded-2xl p-5">
-              <h2 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-4">
-                PPI 환자-의사 상호작용
-              </h2>
-              <div className="grid grid-cols-4 gap-3">
-                {[
-                  { label: '개회', value: scoreResult.ppi_score.opening, max: 3 },
-                  { label: '공감', value: scoreResult.ppi_score.empathy, max: 3 },
-                  { label: '요약', value: scoreResult.ppi_score.summary, max: 2 },
-                  { label: '마무리', value: scoreResult.ppi_score.closure, max: 2 },
-                ].map((item) => (
-                  <div key={item.label} className="text-center">
-                    <div className="w-12 h-12 rounded-full bg-neutral-50 border-2 border-neutral-200 flex items-center justify-center mx-auto mb-2">
-                      <span className="text-sm font-bold text-black">
-                        {item.value}/{item.max}
-                      </span>
-                    </div>
-                    <p className="text-xs text-neutral-500">{item.label}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 pt-3 border-t border-neutral-100 flex justify-between items-center">
-                <span className="text-xs text-neutral-400">PPI 합계</span>
-                <span className="text-sm font-bold text-black">{ppiTotal}/10</span>
-              </div>
-            </div>
-
             {/* 치명적 누락 */}
             {scoreResult.critical_omissions.length > 0 && (
               <div className="border border-red-100 rounded-2xl p-5 bg-red-50/30">

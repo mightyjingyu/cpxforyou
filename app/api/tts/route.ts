@@ -19,15 +19,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'text가 필요합니다.' }, { status: 400 });
     }
 
-    const voice = gender === '남' ? 'echo' : 'alloy';
+    const voice = gender === '남' ? 'onyx' : 'nova';
 
     const client = getOpenAIClient();
     const speech = await client.audio.speech.create({
-      model: 'tts-1',
+      model: 'tts-1-hd',
       voice,
       input: input.slice(0, 4096),
       response_format: 'mp3',
-      speed: 1.18,
+      speed: 1.28,
     });
 
     const buf = Buffer.from(await speech.arrayBuffer());

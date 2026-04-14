@@ -51,8 +51,9 @@ function generateMockScore(messages: Message[], caseSpec: CaseSpec): ScoreResult
 
   const doneCount = checklist_results.filter((r) => r.done).length;
   const totalCount = checklist_results.length;
-  const score = Math.round((doneCount / totalCount) * 100);
   const checklistRatio = totalCount > 0 ? doneCount / totalCount : 0;
+  const answerRatio = 0;
+  const score = Math.round((checklistRatio * 0.9 + answerRatio * 0.1) * 100);
 
   const tags = [`#${caseSpec.clinical_presentation}`];
   const hasPPIIssue = checklist_results.some((r) => r.category === 'PPI' && !r.done);
@@ -100,8 +101,8 @@ function generateMockScore(messages: Message[], caseSpec: CaseSpec): ScoreResult
     },
     tags,
     total_score: score,
-    total_grade: checklistRatio >= 0.9 ? 'A' : checklistRatio >= 0.8 ? 'B' : checklistRatio >= 0.7 ? 'C' : checklistRatio >= 0.6 ? 'D' : 'F',
-    grade_basis: `체크리스트 일치율 ${(checklistRatio * 100).toFixed(0)}%를 기반으로 목업 등급 산정`,
+    total_grade: score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F',
+    grade_basis: `최종단계 정답률 ${(answerRatio * 100).toFixed(0)}% (10%) + 체크리스트 일치율 ${(checklistRatio * 100).toFixed(0)}% (90%) 기반 목업 등급 산정`,
     summary_feedback: `전체 ${totalCount}개 항목 중 ${doneCount}개를 수행했습니다. 핵심 병력청취 항목에 더 집중하고, 환자와의 상호작용(PPI)을 강화하세요.`,
   };
 }

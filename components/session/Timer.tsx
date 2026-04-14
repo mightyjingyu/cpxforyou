@@ -15,6 +15,9 @@ export default function Timer({ onTimeUp }: Props) {
     timerStarted,
     isTimerRunning,
     sessionStatus,
+    historyTakingElapsed,
+    physicalExamElapsed,
+    educationElapsed,
     tick,
     startTimer,
     pauseTimer,
@@ -22,7 +25,9 @@ export default function Timer({ onTimeUp }: Props) {
   } = useSessionStore();
 
   const onTimeUpRef = useRef(onTimeUp);
-  onTimeUpRef.current = onTimeUp;
+  useEffect(() => {
+    onTimeUpRef.current = onTimeUp;
+  }, [onTimeUp]);
 
   useEffect(() => {
     if (!isTimerRunning || sessionStatus !== 'active' || !timerStarted) return;
@@ -58,9 +63,14 @@ export default function Timer({ onTimeUp }: Props) {
     timerStarted;
 
   const modeLabel = timerMode === 'countdown' ? '카운트다운' : '카운트업';
+  const format = (secondsValue: number) => {
+    const mm = Math.floor(secondsValue / 60);
+    const ss = secondsValue % 60;
+    return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+    <div className="flex flex-wrap items-center gap-2 sm:gap-4">
       <div className="flex items-center gap-2">
         <span className="text-[9px] font-black uppercase tracking-wider text-black/40 hidden sm:inline">
           {modeLabel}
@@ -76,6 +86,14 @@ export default function Timer({ onTimeUp }: Props) {
         >
           {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
         </div>
+      </div>
+
+      <div className="hidden lg:flex items-center gap-3 text-[10px] font-bold tracking-wider uppercase">
+        <span className="text-black/40">병력청취 {format(historyTakingElapsed)}</span>
+        <span className="text-black/30">|</span>
+        <span className="text-black/40">신체진찰 {format(physicalExamElapsed)}</span>
+        <span className="text-black/30">|</span>
+        <span className="text-black/40">환자교육 {format(educationElapsed)}</span>
       </div>
 
       <div className="flex items-center gap-1.5">

@@ -19,6 +19,7 @@ type Body =
       caseSpec: CaseSpec;
       conversationHistory: Message[];
       difficulty: 'easy' | 'normal' | 'hard';
+      friendliness?: 'cooperative' | 'normal' | 'uncooperative';
     };
 
 export async function POST(req: NextRequest) {
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
 
     let caseSpec: CaseSpec;
     let difficulty: 'easy' | 'normal' | 'hard';
+    let friendliness: 'cooperative' | 'normal' | 'uncooperative' = 'normal';
     let conversationHistory: Message[];
     let message: string;
     const sessionId = 'sessionId' in body && body.sessionId ? body.sessionId : null;
@@ -36,11 +38,13 @@ export async function POST(req: NextRequest) {
       if (s) {
         caseSpec = s.caseSpec;
         difficulty = s.difficulty;
+        friendliness = s.friendliness;
         conversationHistory = s.conversationHistory;
         message = body.message;
       } else if ('caseSpec' in body && body.caseSpec) {
         caseSpec = body.caseSpec;
         difficulty = body.difficulty;
+        friendliness = body.friendliness || 'normal';
         conversationHistory = body.conversationHistory ?? [];
         message = body.message;
       } else {
@@ -52,6 +56,7 @@ export async function POST(req: NextRequest) {
     } else if ('caseSpec' in body && body.caseSpec) {
       caseSpec = body.caseSpec;
       difficulty = body.difficulty;
+      friendliness = body.friendliness || 'normal';
       conversationHistory = body.conversationHistory ?? [];
       message = body.message;
     } else {
@@ -73,12 +78,21 @@ export async function POST(req: NextRequest) {
       normal: 5,
       hard: 8,
     };
+    const unfriendlinessByFriendliness: Record<'cooperative' | 'normal' | 'uncooperative', number> = {
+      cooperative: 2,
+      normal: 5,
+      uncooperative: 9,
+    };
+    const unfriendliness = Math.round(
+      unfriendlinessByDifficulty[difficulty] * 0.35 +
+      unfriendlinessByFriendliness[friendliness] * 0.65
+    );
     const systemPrompt = buildSystemPrompt(
       caseSpec.clinical_presentation,
       caseSpec.opening_line || caseSpec.clinical_presentation,
       caseSpec.true_diagnosis,
       difficulty,
-      unfriendlinessByDifficulty[difficulty],
+      unfriendliness,
       caseSpec.patient.name,
       caseSpec.patient.age,
       caseSpec.patient.gender,
@@ -132,9 +146,9 @@ export async function POST(req: NextRequest) {
 
     const client = getOpenAIClient();
     const llmStream = await client.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-4o-mini',
       messages,
-      max_tokens: 300,
+      max_tokens: 220,
       temperature: 0.7,
       stream: true,
     });

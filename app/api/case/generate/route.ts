@@ -5,6 +5,7 @@ import { validateCaseSpec } from '@/lib/ai/caseValidator';
 import { SEED_CASES, getRandomSeedCase } from '@/data/seeds/cases';
 import { CaseSpec } from '@/types';
 import { CLINICAL_PRESENTATIONS, PERSONA_TEMPLATES } from '@/lib/ai/personaTemplate';
+import { getChecklistByClinicalPresentation } from '@/lib/server/clinicalChecklistStore';
 
 function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -57,6 +58,37 @@ function ensureAnswerKey(caseSpec: CaseSpec): CaseSpec {
   };
 }
 
+function applyClinicalChecklist(caseSpec: CaseSpec): CaseSpec {
+  const checklist = getChecklistByClinicalPresentation(
+    caseSpec.clinical_presentation,
+    caseSpec.checklist_variant
+  );
+  if (!checklist) return caseSpec;
+  return {
+    ...caseSpec,
+    checklist,
+  };
+}
+
+const CHECKLIST_VARIANTS: Record<string, string[]> = {
+  '배변이상(변비/설사)': ['6-1', '6-2'],
+  '목통증/허리통증': ['28-1', '28-2'],
+  '소변량 변화(다뇨증/핍뇨)': ['18-1', '18-2'],
+  '질 분비물/질 출혈': ['41-1', '41-2'],
+  '월경이상/월경통': ['42-1', '42-2'],
+  '음주/금연 상담': ['46-1', '46-2'],
+  '가정 폭력/성폭력': ['49-1', '49-2'],
+};
+
+function assignChecklistVariant(caseSpec: CaseSpec): CaseSpec {
+  const variants = CHECKLIST_VARIANTS[caseSpec.clinical_presentation];
+  if (!variants || variants.length === 0) {
+    return { ...caseSpec, checklist_variant: undefined };
+  }
+  const picked = variants[Math.floor(Math.random() * variants.length)];
+  return { ...caseSpec, checklist_variant: picked };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -79,7 +111,11 @@ export async function POST(req: NextRequest) {
         difficulty,
         clinical_presentation: presentation,
       } as CaseSpec;
-      const randomizedCase = ensureAnswerKey(randomizePatientDemographics(caseSpec, persona_template_id));
+      const randomizedCase = applyClinicalChecklist(
+        assignChecklistVariant(
+          ensureAnswerKey(randomizePatientDemographics(caseSpec, persona_template_id))
+        )
+      );
 
       const validation = validateCaseSpec(randomizedCase);
       return NextResponse.json({ caseSpec: randomizedCase, validation, source: 'seed' });
@@ -94,7 +130,11 @@ export async function POST(req: NextRequest) {
     do {
       generated = await generateCaseSpec({ clinical_presentation: presentation, difficulty, learning_goal, persona_template_id });
       generated.clinical_presentation = presentation;
-      generated = ensureAnswerKey(randomizePatientDemographics(generated, persona_template_id));
+      generated = applyClinicalChecklist(
+        assignChecklistVariant(
+          ensureAnswerKey(randomizePatientDemographics(generated, persona_template_id))
+        )
+      );
       validation = validateCaseSpec(generated);
       attempts++;
     } while (!validation.passed && attempts < maxAttempts);
@@ -108,7 +148,11 @@ export async function POST(req: NextRequest) {
         difficulty,
         clinical_presentation: presentation,
       } as CaseSpec;
-      const randomizedFallback = ensureAnswerKey(randomizePatientDemographics(fallback, persona_template_id));
+      const randomizedFallback = applyClinicalChecklist(
+        assignChecklistVariant(
+          ensureAnswerKey(randomizePatientDemographics(fallback, persona_template_id))
+        )
+      );
       const fallbackValidation = validateCaseSpec(randomizedFallback);
       return NextResponse.json({ caseSpec: randomizedFallback, validation: fallbackValidation, source: 'seed_fallback' });
     }
@@ -119,7 +163,11 @@ export async function POST(req: NextRequest) {
     // 에러 시 시드 폴백
     const seed = getRandomSeedCase();
     const fallback: CaseSpec = { ...seed, case_id: uuidv4(), difficulty: 'normal' } as CaseSpec;
-    const randomizedFallback = ensureAnswerKey(randomizePatientDemographics(fallback, 'default_v1'));
+    const randomizedFallback = applyClinicalChecklist(
+      assignChecklistVariant(
+        ensureAnswerKey(randomizePatientDemographics(fallback, 'default_v1'))
+      )
+    );
     return NextResponse.json({ caseSpec: randomizedFallback, validation: { passed: true, checks: ['seed fallback'], failures: [] }, source: 'error_fallback' });
   }
 }

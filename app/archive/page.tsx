@@ -8,11 +8,19 @@ import { CLINICAL_CATEGORIES } from '@/lib/ai/personaTemplate';
 
 export default function ArchivePage() {
   const router = useRouter();
-  const { archivedSessions } = useSessionStore();
+  const { archivedSessions, memoTemplates, saveMemoTemplate, updateMemoTemplate } = useSessionStore();
   const [gradeFilter, setGradeFilter] = useState<'ALL' | 'A' | 'B' | 'C' | 'D' | 'F'>('ALL');
   const [clinicalFilter, setClinicalFilter] = useState<string>('ALL');
   const [query, setQuery] = useState('');
   const [groupMode, setGroupMode] = useState<'date' | 'category'>('date');
+  const [memoModal, setMemoModal] = useState<{
+    open: boolean;
+    mode: 'list' | 'create';
+    editingId: string | null;
+    clinical: string;
+    name: string;
+    content: string;
+  }>({ open: false, mode: 'list', editingId: null, clinical: '', name: '', content: '' });
 
   const formatDate = (ts: number) => {
     const d = new Date(ts);
@@ -72,6 +80,40 @@ export default function ArchivePage() {
       return a[0].localeCompare(b[0], 'ko');
     });
   }, [filteredSessions, groupMode]);
+
+  const openMemoModal = (clinical: string) => {
+    setMemoModal({
+      open: true,
+      mode: 'list',
+      editingId: null,
+      clinical,
+      name: `${clinical} 템플릿`,
+      content: '',
+    });
+  };
+
+  const submitMemoTemplate = () => {
+    if (memoModal.editingId) {
+      updateMemoTemplate(memoModal.editingId, {
+        name: memoModal.name,
+        content: memoModal.content,
+        clinicalPresentation: memoModal.clinical,
+      });
+    } else {
+      saveMemoTemplate({
+        name: memoModal.name,
+        content: memoModal.content,
+        clinicalPresentation: memoModal.clinical,
+      });
+    }
+    setMemoModal((s) => ({
+      ...s,
+      mode: 'list',
+      editingId: null,
+      name: `${s.clinical} 템플릿`,
+      content: '',
+    }));
+  };
 
   return (
     <div className="min-h-screen bg-white relative flex flex-col font-sans selection:bg-black selection:text-white">
@@ -156,6 +198,12 @@ export default function ArchivePage() {
                   </option>
                 ))}
               </select>
+              <button
+                onClick={() => openMemoModal(clinicalFilter === 'ALL' ? '전체 보기' : clinicalFilter)}
+                className="w-full mt-3 px-4 py-2.5 rounded-xl border border-black text-xs font-bold hover:bg-black hover:text-white transition-colors"
+              >
+                메모 만들어놓기
+              </button>
 
             </div>
           </aside>
@@ -217,6 +265,112 @@ export default function ArchivePage() {
           </main>
         </div>
       </div>
+      {memoModal.open && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-xl rounded-3xl border border-black bg-white p-6">
+            <h3 className="text-lg font-black mb-1">메모 만들어놓기</h3>
+            <p className="text-xs text-black/50 mb-4">{memoModal.clinical}</p>
+            {memoModal.mode === 'list' ? (
+              <div className="space-y-2 mb-3 max-h-72 overflow-auto">
+                {memoTemplates.length === 0 && (
+                  <p className="text-xs text-black/50">아직 저장된 메모가 없습니다.</p>
+                )}
+                {memoTemplates.map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    onClick={() =>
+                      setMemoModal((s) => ({
+                        ...s,
+                        mode: 'create',
+                        editingId: tpl.id,
+                        name: tpl.name,
+                        content: tpl.content,
+                        clinical: tpl.clinicalPresentation || s.clinical,
+                      }))
+                    }
+                    className="w-full text-left rounded-xl border border-black px-3 py-2 hover:bg-black hover:text-white transition-colors"
+                  >
+                    <p className="text-xs font-black">{tpl.name}</p>
+                    <p className="text-[11px] opacity-70 mt-1 line-clamp-2">{tpl.content}</p>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <>
+                <input
+                  value={memoModal.name}
+                  onChange={(e) => setMemoModal((s) => ({ ...s, name: e.target.value }))}
+                  placeholder="메모 이름"
+                  className="w-full rounded-xl border border-black px-3 py-2 text-sm mb-3"
+                />
+                <textarea
+                  value={memoModal.content}
+                  onChange={(e) => setMemoModal((s) => ({ ...s, content: e.target.value }))}
+                  placeholder="세션에서 바로 불러올 메모 내용을 입력하세요."
+                  className="w-full h-44 rounded-xl border border-black px-3 py-2 text-sm font-mono"
+                />
+              </>
+            )}
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button
+                onClick={() =>
+                  setMemoModal({
+                    open: false,
+                    mode: 'list',
+                    editingId: null,
+                    clinical: '',
+                    name: '',
+                    content: '',
+                  })
+                }
+                className="px-4 py-2 rounded-full border border-black text-xs font-bold"
+              >
+                취소
+              </button>
+              {memoModal.mode === 'list' ? (
+                <button
+                  onClick={() =>
+                    setMemoModal((s) => ({
+                      ...s,
+                      mode: 'create',
+                      editingId: null,
+                      name: `${s.clinical} 템플릿`,
+                      content: '',
+                    }))
+                  }
+                  className="px-4 py-2 rounded-full bg-black text-white text-xs font-bold"
+                >
+                  새 메모 만들기
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() =>
+                      setMemoModal((s) => ({
+                        ...s,
+                        mode: 'list',
+                        editingId: null,
+                        name: `${s.clinical} 템플릿`,
+                        content: '',
+                      }))
+                    }
+                    className="px-4 py-2 rounded-full border border-black text-xs font-bold"
+                  >
+                    목록으로
+                  </button>
+                  <button
+                    onClick={submitMemoTemplate}
+                    className="px-4 py-2 rounded-full bg-black text-white text-xs font-bold"
+                  >
+                    {memoModal.editingId ? '수정 저장' : '저장'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

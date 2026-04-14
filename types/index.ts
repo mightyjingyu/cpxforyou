@@ -80,6 +80,8 @@ export interface CaseSpec {
   answer_key: AnswerKey;
   high_risk_omissions?: string[];
   ai_deception_strategy?: string;
+  /** 복수 시트 임상에서 선택된 체크리스트 분기 키 (예: 18-1, 18-2) */
+  checklist_variant?: string;
 }
 
 export interface Message {
