@@ -117,17 +117,30 @@ export default function VoiceEngine({
     async (transcript: string) => {
       if (!sessionId) throw new Error('no session');
 
-      const res = await fetch('/api/chat/stream', {
+      const basePayload = {
+        sessionId,
+        message: transcript,
+      };
+      const fallbackPayload = {
+        ...basePayload,
+        caseSpec,
+        difficulty,
+        conversationHistory: conversationHistory.slice(-16),
+      };
+
+      let res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId,
-          message: transcript,
-          caseSpec,
-          difficulty,
-          conversationHistory,
-        }),
+        body: JSON.stringify(basePayload),
       });
+      if (!res.ok && caseSpec) {
+        // Stateless runtime에서 sessionId 조회 실패 시에만 컨텍스트 포함 fallback
+        res = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(fallbackPayload),
+        });
+      }
 
       if (!res.ok) {
         const errText = await res.text();

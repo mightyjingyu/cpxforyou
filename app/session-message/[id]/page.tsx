@@ -100,17 +100,29 @@ export default function SessionMessagePage() {
           return;
         }
 
-        const res = await fetch('/api/chat/stream', {
+        const basePayload = {
+          sessionId,
+          message: text,
+        };
+        const fallbackPayload = {
+          ...basePayload,
+          caseSpec,
+          difficulty,
+          conversationHistory: conversationHistory.slice(-16),
+        };
+
+        let res = await fetch('/api/chat/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId,
-            message: text,
-            caseSpec,
-            difficulty,
-            conversationHistory,
-          }),
+          body: JSON.stringify(basePayload),
         });
+        if (!res.ok) {
+          res = await fetch('/api/chat/stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(fallbackPayload),
+          });
+        }
         if (!res.ok) throw new Error('응답 생성 실패');
         const responseText = (await res.text()).trim();
         if (!responseText) return;
