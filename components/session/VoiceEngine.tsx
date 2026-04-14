@@ -68,6 +68,8 @@ export default function VoiceEngine({
 }: Props) {
   const caseSpec = useSessionStore((s) => s.caseSpec);
   const sessionId = useSessionStore((s) => s.sessionId);
+  const difficulty = useSessionStore((s) => s.difficulty);
+  const conversationHistory = useSessionStore((s) => s.conversationHistory);
   const sessionStatus = useSessionStore((s) => s.sessionStatus);
   const addMessage = useSessionStore((s) => s.addMessage);
 
@@ -121,6 +123,9 @@ export default function VoiceEngine({
         body: JSON.stringify({
           sessionId,
           message: transcript,
+          caseSpec,
+          difficulty,
+          conversationHistory,
         }),
       });
 
@@ -199,7 +204,7 @@ export default function VoiceEngine({
 
       return patientFull;
     },
-    [caseSpec, sessionId, updateVoiceState]
+    [caseSpec, sessionId, difficulty, conversationHistory, updateVoiceState]
   );
 
   const processRecording = useCallback(async () => {
