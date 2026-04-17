@@ -14,7 +14,7 @@ async function transcribeWithModel(client: OpenAI, file: File, model: 'gpt-4o-mi
     language: 'ko',
     response_format: 'text',
   });
-  return typeof transcription === 'string' ? transcription.trim() : transcription.text.trim();
+  return transcription.trim();
 }
 
 export async function POST(req: NextRequest) {
