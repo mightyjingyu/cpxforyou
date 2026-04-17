@@ -89,12 +89,17 @@ interface SessionState {
   ) => void;
   applyMemoTemplate: (templateId: string) => void;
   reset: () => void;
+  /** 로그인 uid(또는 guest) 전환 시: 메모리에 남은 타 계정 데이터 제거 후 persist 재로드 */
+  onAccountScopeChange: () => void;
 }
 
 const DEFAULT_EXAM_DEDUCTION_SECONDS = 240;
 const MIN_EXAM_DEDUCTION_SECONDS = 30;
 const MAX_EXAM_DEDUCTION_SECONDS = 600;
 const BASE_PERSIST_KEY = 'cpx-session-storage';
+
+/** AuthProvider에서 동일 uid로 syncSessionWithAuthScope가 반복 호출되지 않게 함 */
+let lastSyncedAuthScope: string | null | undefined = undefined;
 
 function getPersistScope(): string {
   if (typeof window === 'undefined') return 'server';
@@ -500,6 +505,36 @@ export const useSessionStore = create<SessionState>()(
           physicalExamElapsed: 0,
           educationElapsed: 0,
         }),
+
+      onAccountScopeChange: () =>
+        set({
+          caseSpec: null,
+          timerMode: 'countdown',
+          timeRemaining: DEFAULT_COUNTDOWN_SECONDS,
+          countUpElapsed: 0,
+          timerStarted: false,
+          isTimerRunning: false,
+          physicalExamDone: false,
+          conversationHistory: [],
+          memoContent: '',
+          sessionStatus: 'idle',
+          sessionId: null,
+          sessionStartTime: null,
+          sessionClockStartedAt: null,
+          physicalExamStartedAt: null,
+          physicalExamEndedAt: null,
+          scoreResult: null,
+          phaseDurations: null,
+          totalElapsedSeconds: 0,
+          sessionPhase: 'history',
+          historyTakingElapsed: 0,
+          physicalExamElapsed: 0,
+          educationElapsed: 0,
+          examTimeDeductionSeconds: DEFAULT_EXAM_DEDUCTION_SECONDS,
+          archivedSessions: [],
+          memoTemplates: [],
+          sessionIndexSyncQueue: [],
+        }),
     }),
     {
       name: BASE_PERSIST_KEY,
@@ -513,3 +548,16 @@ export const useSessionStore = create<SessionState>()(
     }
   )
 );
+
+/**
+ * Firebase uid(또는 비로그인 guest)가 바뀔 때만 호출.
+ * persist에 없는 필드(대화, 메모, 채점 등)가 메모리에 남아 타 계정과 섞이는 것을 막는다.
+ */
+export function syncSessionWithAuthScope(uid: string | null) {
+  if (typeof window === 'undefined') return;
+  const scope = uid ?? 'guest';
+  if (lastSyncedAuthScope === scope) return;
+  lastSyncedAuthScope = scope;
+  useSessionStore.getState().onAccountScopeChange();
+  void useSessionStore.persist.rehydrate();
+}

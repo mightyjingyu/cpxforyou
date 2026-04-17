@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { signInWithGoogle, signOutGoogle, subscribeAuthState } from '@/lib/firebase/auth';
-import { useSessionStore } from '@/store/sessionStore';
+import { syncSessionWithAuthScope, useSessionStore } from '@/store/sessionStore';
 
 type AuthContextValue = {
   user: User | null;
@@ -34,8 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (authLoading) return;
-    // 계정 전환 시 zustand persist를 현재 uid 스코프로 다시 hydrate한다.
-    void useSessionStore.persist.rehydrate();
+    syncSessionWithAuthScope(user?.uid ?? null);
   }, [authLoading, user?.uid]);
 
   const value = useMemo<AuthContextValue>(
