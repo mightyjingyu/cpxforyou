@@ -32,6 +32,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void flushSessionIndexSyncQueue();
   }, [user, flushSessionIndexSyncQueue]);
 
+  useEffect(() => {
+    if (authLoading) return;
+    // 계정 전환 시 zustand persist를 현재 uid 스코프로 다시 hydrate한다.
+    void useSessionStore.persist.rehydrate();
+  }, [authLoading, user?.uid]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,

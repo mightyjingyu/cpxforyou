@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { SessionIndexRetryItem } from '@/types/firebase';
 import {
   CaseSpec,
@@ -94,6 +94,36 @@ interface SessionState {
 const DEFAULT_EXAM_DEDUCTION_SECONDS = 240;
 const MIN_EXAM_DEDUCTION_SECONDS = 30;
 const MAX_EXAM_DEDUCTION_SECONDS = 600;
+const BASE_PERSIST_KEY = 'cpx-session-storage';
+
+function getPersistScope(): string {
+  if (typeof window === 'undefined') return 'server';
+  try {
+    const auth = getFirebaseAuth();
+    return auth.currentUser?.uid ?? 'guest';
+  } catch {
+    return 'guest';
+  }
+}
+
+function getScopedPersistKey(baseName: string): string {
+  return `${baseName}:${getPersistScope()}`;
+}
+
+const scopedSessionStorage = createJSONStorage(() => ({
+  getItem: (baseName: string) => {
+    if (typeof window === 'undefined') return null;
+    return window.localStorage.getItem(getScopedPersistKey(baseName));
+  },
+  setItem: (baseName: string, value: string) => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(getScopedPersistKey(baseName), value);
+  },
+  removeItem: (baseName: string) => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.removeItem(getScopedPersistKey(baseName));
+  },
+}));
 
 export const useSessionStore = create<SessionState>()(
   persist(
@@ -472,7 +502,8 @@ export const useSessionStore = create<SessionState>()(
         }),
     }),
     {
-      name: 'cpx-session-storage',
+      name: BASE_PERSIST_KEY,
+      storage: scopedSessionStorage,
       partialize: (state) => ({
         archivedSessions: state.archivedSessions,
         examTimeDeductionSeconds: state.examTimeDeductionSeconds,
