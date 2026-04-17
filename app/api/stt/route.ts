@@ -37,8 +37,8 @@ export async function POST(req: NextRequest) {
 
     const name = raw instanceof File ? raw.name : 'audio.webm';
     const type = raw.type || 'audio/webm';
-    // 이미 File이면 그대로 전달해 메모리 복사를 줄여 STT 요청 시작 시간을 단축한다.
-    const file = raw instanceof File ? raw : await toFile(Buffer.from(await raw.arrayBuffer()), name, { type });
+    const bytes = Buffer.from(await raw.arrayBuffer());
+    const file = await toFile(bytes, name, { type });
 
     const client = getOpenAIClient();
     let text = '';
