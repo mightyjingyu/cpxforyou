@@ -193,10 +193,9 @@ export default function VoiceEngine({
 
       const pushAudio = (blob: Blob) => {
         audioQueue.push(blob);
-        if (notifyAudioReady) {
-          notifyAudioReady();
-          notifyAudioReady = null;
-        }
+        const ready = notifyAudioReady;
+        notifyAudioReady = null;
+        ready?.();
       };
 
       const playbackTask = (async () => {
@@ -261,10 +260,9 @@ export default function VoiceEngine({
 
       await Promise.all(ttsTasks);
       queueDone = true;
-      if (notifyAudioReady) {
-        notifyAudioReady();
-        notifyAudioReady = null;
-      }
+      const ready = notifyAudioReady as (() => void) | null;
+      notifyAudioReady = null;
+      ready?.();
       await playbackTask;
 
       return patientFull;
