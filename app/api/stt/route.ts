@@ -7,6 +7,16 @@ function getOpenAIClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
+async function transcribeWithModel(client: OpenAI, file: File, model: 'gpt-4o-mini-transcribe' | 'gpt-4o-transcribe') {
+  const transcription = await client.audio.transcriptions.create({
+    file,
+    model,
+    language: 'ko',
+    response_format: 'text',
+  });
+  return typeof transcription === 'string' ? transcription.trim() : transcription.text.trim();
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
@@ -19,23 +29,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'file 필드가 필요합니다.' }, { status: 400 });
     }
 
-    const buf = Buffer.from(await raw.arrayBuffer());
-    if (buf.length < 512) {
-      return NextResponse.json({ error: '녹음이 너무 짧습니다.' }, { status: 400 });
+    const inputSize = raw.size;
+    if (inputSize < 320) {
+      // 극단적으로 짧은 오디오는 실패 처리 대신 빈 텍스트로 반환해 재녹음을 유도한다.
+      return NextResponse.json({ text: '' });
     }
 
     const name = raw instanceof File ? raw.name : 'audio.webm';
     const type = raw.type || 'audio/webm';
-    const file = await toFile(buf, name, { type });
+    // 이미 File이면 그대로 전달해 메모리 복사를 줄여 STT 요청 시작 시간을 단축한다.
+    const file = raw instanceof File ? raw : await toFile(Buffer.from(await raw.arrayBuffer()), name, { type });
 
     const client = getOpenAIClient();
-    const transcription = await client.audio.transcriptions.create({
-      file,
-      model: 'whisper-1',
-      language: 'ko',
-    });
-
-    return NextResponse.json({ text: transcription.text.trim() });
+    let text = '';
+    try {
+      text = await transcribeWithModel(client, file, 'gpt-4o-mini-transcribe');
+    } catch (primaryError) {
+      console.warn('Primary STT model failed, retrying backup model:', primaryError);
+    }
+    if (!text) {
+      text = await transcribeWithModel(client, file, 'gpt-4o-transcribe');
+    }
+    return NextResponse.json({ text });
   } catch (error) {
     console.error('STT API error:', error);
     return NextResponse.json({ error: '음성 인식 중 오류가 발생했습니다.' }, { status: 500 });

@@ -6,14 +6,37 @@ function getOpenAIClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
+const MAX_SCORING_LOG_CHARS = 20000;
+
 export function formatConversationLog(messages: Message[]): string {
-  return messages
+  const fullLog = messages
     .map((m) => {
       const role = m.role === 'user' ? '학생' : '환자';
       const time = formatTimestamp(m.timestamp);
       return `[${time}] ${role}: ${m.content}`;
     })
     .join('\n');
+
+  if (fullLog.length <= MAX_SCORING_LOG_CHARS) return fullLog;
+
+  let keptChars = 0;
+  const keptLines: string[] = [];
+  let keptTurns = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const role = m.role === 'user' ? '학생' : '환자';
+    const time = formatTimestamp(m.timestamp);
+    const line = `[${time}] ${role}: ${m.content}`;
+    const lineLen = line.length + 1;
+    if (keptChars + lineLen > MAX_SCORING_LOG_CHARS) break;
+    keptLines.unshift(line);
+    keptChars += lineLen;
+    keptTurns += 1;
+  }
+
+  const omittedTurns = Math.max(0, messages.length - keptTurns);
+  const summary = `[요약] 세션이 길어 최근 ${keptTurns}턴만 채점 입력에 사용했습니다. 앞선 ${omittedTurns}턴은 길이 제한으로 생략되었습니다.`;
+  return `${summary}\n${keptLines.join('\n')}`;
 }
 
 function formatTimestamp(ms: number): string {

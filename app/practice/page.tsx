@@ -1,17 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import { useSessionStore } from '@/store/sessionStore';
 import { CLINICAL_CATEGORIES, CLINICAL_PRESENTATIONS } from '@/lib/ai/personaTemplate';
 import { CaseSpec, Difficulty, Friendliness, TimerMode } from '@/types';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 type PracticeMode = 'full_random' | 'category_random' | 'clinical_pick';
 
 export default function PracticePage() {
   const router = useRouter();
   const { startSession } = useSessionStore();
+  const { user, authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<PracticeMode>('full_random');
   const [category, setCategory] = useState<string>(Object.keys(CLINICAL_CATEGORIES)[0] || '');
@@ -20,6 +22,14 @@ export default function PracticePage() {
   const [friendliness, setFriendliness] = useState<Friendliness>('normal');
   const [timerMode, setTimerMode] = useState<TimerMode>('countdown');
   const [interactionMode, setInteractionMode] = useState<'voice' | 'text'>('voice');
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace('/');
+    }
+  }, [authLoading, user, router]);
+
+  if (!authLoading && !user) return null;
 
   const handleStartSession = async () => {
     setLoading(true);

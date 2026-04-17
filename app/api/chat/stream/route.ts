@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server';
 import OpenAI from 'openai';
 import { buildSystemPrompt } from '@/lib/ai/patientEngine';
 import { appendChatTurn, getChatSession } from '@/lib/server/chatSessionStore';
-import { detectPhysicalExamIntentByLLM } from '@/lib/ai/examIntent';
 import { CaseSpec, Message } from '@/types';
 
 export const runtime = 'nodejs';
@@ -98,11 +97,9 @@ export async function POST(req: NextRequest) {
       caseSpec.patient.gender,
       caseSpec.answer_key
     );
-    const isPhysicalExam = await detectPhysicalExamIntentByLLM(message);
-
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
-      ...conversationHistory.slice(-20).map((m) => ({
+      ...conversationHistory.slice(-6).map((m) => ({
         role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
         content: m.content,
       })),
@@ -113,6 +110,7 @@ export async function POST(req: NextRequest) {
     const userTrimmed = message.trim();
 
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
+      const isPhysicalExam = false;
       let mockResponse = '';
       if (isPhysicalExam) {
         mockResponse = `[진찰소견] ${caseSpec.physical_exam_findings}`;
@@ -148,8 +146,8 @@ export async function POST(req: NextRequest) {
     const llmStream = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       messages,
-      max_tokens: 220,
-      temperature: 0.7,
+      max_tokens: 140,
+      temperature: 0.35,
       stream: true,
     });
 

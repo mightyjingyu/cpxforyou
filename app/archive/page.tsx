@@ -1,14 +1,16 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSessionStore } from '@/store/sessionStore';
 import { SessionData } from '@/types';
 import { CLINICAL_CATEGORIES } from '@/lib/ai/personaTemplate';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 export default function ArchivePage() {
   const router = useRouter();
   const { archivedSessions, memoTemplates, saveMemoTemplate, updateMemoTemplate } = useSessionStore();
+  const { user, authLoading, logout } = useAuth();
   const [gradeFilter, setGradeFilter] = useState<'ALL' | 'A' | 'B' | 'C' | 'D' | 'F'>('ALL');
   const [clinicalFilter, setClinicalFilter] = useState<string>('ALL');
   const [query, setQuery] = useState('');
@@ -21,6 +23,12 @@ export default function ArchivePage() {
     name: string;
     content: string;
   }>({ open: false, mode: 'list', editingId: null, clinical: '', name: '', content: '' });
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace('/');
+    }
+  }, [authLoading, user, router]);
 
   const formatDate = (ts: number) => {
     const d = new Date(ts);
@@ -115,6 +123,8 @@ export default function ArchivePage() {
     }));
   };
 
+  if (!authLoading && !user) return null;
+
   return (
     <div className="min-h-screen bg-white relative flex flex-col font-sans selection:bg-black selection:text-white">
       {/* Background Grid Pattern */}
@@ -141,6 +151,17 @@ export default function ArchivePage() {
             </button>
             <h1 className="text-sm font-black tracking-widest uppercase">Archive</h1>
             <div className="flex items-center gap-2">
+              {user && (
+                <button
+                  onClick={async () => {
+                    await logout();
+                    router.replace('/');
+                  }}
+                  className="px-3 py-1.5 rounded-full border border-black text-[10px] font-bold uppercase tracking-wider hover:bg-black hover:text-white transition-colors"
+                >
+                  로그아웃
+                </button>
+              )}
               <span className="text-xs font-bold text-black border border-black rounded-full px-3 py-1 bg-white/50">{filteredSessions.length}/{archivedSessions.length}</span>
               <button
                 onClick={() => router.push('/practice')}

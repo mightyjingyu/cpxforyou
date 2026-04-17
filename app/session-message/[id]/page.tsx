@@ -1,20 +1,13 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import { useSessionStore } from '@/store/sessionStore';
+import { useAuth } from '@/components/auth/AuthProvider';
 import Timer from '@/components/session/Timer';
 import PatientVisual from '@/components/session/PatientVisual';
 import MemoPanel from '@/components/session/MemoPanel';
-
-function looksLikePhysicalExamIntent(text: string): boolean {
-  const normalized = text.trim();
-  if (!normalized) return false;
-  return /(검사|진찰|이학적|청진|촉진|타진|시진|복부|심장|폐|신경학|반사|동공|경부|사지|혈액검사|소변검사|엑스레이|x-ray|ct|mri|초음파|심전도|내시경)/i.test(
-    normalized
-  );
-}
 
 export default function SessionMessagePage() {
   const router = useRouter();
@@ -22,7 +15,7 @@ export default function SessionMessagePage() {
     caseSpec,
     sessionStatus,
     sessionId,
-    deductTime,
+    applyExamTimeDeduction,
     markPhysicalExamDone,
     completeHistoryTaking,
     completeEducation,
@@ -36,18 +29,38 @@ export default function SessionMessagePage() {
     setExamTimeDeductionSeconds,
     difficulty,
   } = useSessionStore();
+  const { user, authLoading } = useAuth();
 
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [showPhysicalExamGuide, setShowPhysicalExamGuide] = useState(false);
   const [inputText, setInputText] = useState('');
   const [processing, setProcessing] = useState(false);
   const [examResultTexts, setExamResultTexts] = useState<string[]>([]);
+  const [streamingReply, setStreamingReply] = useState('');
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const examResultScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace('/');
+      return;
+    }
     if (!caseSpec || sessionStatus === 'idle') {
       router.replace('/');
     }
-  }, [caseSpec, sessionStatus, router]);
+  }, [authLoading, user, caseSpec, sessionStatus, router]);
+
+  useEffect(() => {
+    const node = chatScrollRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [conversationHistory, streamingReply, processing]);
+
+  useEffect(() => {
+    const node = examResultScrollRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [examResultTexts]);
 
   const handleTimeUp = useCallback(() => {
     endSession();
@@ -85,6 +98,7 @@ export default function SessionMessagePage() {
       if (!timerStarted || processing) return;
 
       setProcessing(true);
+      setStreamingReply('');
       setInputText('');
 
       addMessage({
@@ -95,7 +109,7 @@ export default function SessionMessagePage() {
       });
 
       try {
-        if (sessionPhase === 'physical' && !physicalExamDone && looksLikePhysicalExamIntent(text)) {
+        if (sessionPhase === 'physical' && !physicalExamDone) {
           await handlePhysicalExamTranscript(text);
           return;
         }
@@ -124,7 +138,18 @@ export default function SessionMessagePage() {
           });
         }
         if (!res.ok) throw new Error('응답 생성 실패');
-        const responseText = (await res.text()).trim();
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error('응답 본문을 읽을 수 없습니다.');
+        const decoder = new TextDecoder();
+        let responseText = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          responseText += chunk;
+          setStreamingReply(responseText);
+        }
+        responseText = responseText.trim();
         if (!responseText) return;
         addMessage({
           id: uuidv4(),
@@ -135,6 +160,7 @@ export default function SessionMessagePage() {
       } catch (error) {
         console.error(error);
       } finally {
+        setStreamingReply('');
         setProcessing(false);
       }
     },
@@ -168,8 +194,8 @@ export default function SessionMessagePage() {
   const handlePhysicalComplete = useCallback(() => {
     if (physicalExamDone || sessionPhase !== 'physical') return;
     markPhysicalExamDone();
-    deductTime(examTimeDeductionSeconds);
-  }, [physicalExamDone, sessionPhase, markPhysicalExamDone, deductTime, examTimeDeductionSeconds]);
+    applyExamTimeDeduction(examTimeDeductionSeconds);
+  }, [physicalExamDone, sessionPhase, markPhysicalExamDone, applyExamTimeDeduction, examTimeDeductionSeconds]);
 
   const handleEducationComplete = useCallback(() => {
     completeEducation();
@@ -187,7 +213,7 @@ export default function SessionMessagePage() {
     return '메시지를 입력해 환자와 대화하세요';
   }, [timerStarted, processing, sessionPhase]);
 
-  if (!caseSpec || sessionStatus === 'idle') {
+  if ((!authLoading && !user) || !caseSpec || sessionStatus === 'idle') {
     return (
       <div className="min-h-screen bg-white relative flex items-center justify-center font-sans">
         <div className="text-center relative z-10 glass p-8 rounded-3xl border border-black">
@@ -211,7 +237,7 @@ export default function SessionMessagePage() {
 
       <header className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-black bg-white/70 backdrop-blur-xl relative z-50 shrink-0">
         <div className="flex flex-wrap items-center gap-3 min-w-0">
-          <span className="text-xs font-black text-black uppercase tracking-widest shrink-0">YOU ZERO Message Session</span>
+          <span className="text-xs font-black text-black uppercase tracking-widest shrink-0">CPX FOR YOU 0 Message Session</span>
           <div className="w-1.5 h-1.5 bg-black rounded-full shrink-0 hidden sm:block" />
           <Timer onTimeUp={handleTimeUp} />
         </div>
@@ -225,7 +251,7 @@ export default function SessionMessagePage() {
       </header>
 
       <div className="flex-1 flex overflow-hidden min-h-0 relative z-10 w-full max-w-[1500px] mx-auto border-x border-black bg-transparent">
-        <div className="w-1/3 flex flex-col p-6 border-r border-black relative">
+        <div className="w-1/2 flex flex-col p-6 border-r border-black relative min-h-0">
           <div className="absolute inset-0 bg-white/30 backdrop-blur-sm -z-10" />
           <div className="rounded-2xl border border-black bg-white/80 p-4 mb-4">
             <p className="text-[10px] font-black tracking-widest uppercase text-black/50 mb-2">Patient / Vitals</p>
@@ -240,7 +266,7 @@ export default function SessionMessagePage() {
             </div>
           </div>
 
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex items-start justify-center">
             <PatientVisual
               caseSpec={caseSpec}
               voiceState={processing ? 'thinking' : 'idle'}
@@ -248,7 +274,7 @@ export default function SessionMessagePage() {
             />
           </div>
 
-          <div className="mt-4 flex flex-col gap-2">
+          <div className="mt-2 flex flex-col gap-2">
             <div className="flex items-center justify-center gap-2">
               <button
                 onClick={handleHistoryComplete}
@@ -291,16 +317,20 @@ export default function SessionMessagePage() {
               </button>
             </div>
           </div>
+
+          <div className="mt-4 flex-1 min-h-0 rounded-3xl border border-black bg-white/60 backdrop-blur-xl overflow-hidden glass shadow-sm relative">
+            <MemoPanel />
+          </div>
         </div>
 
-        <div className="w-2/3 flex flex-col p-6 gap-5 min-h-0 relative">
+        <div className="w-1/2 flex flex-col p-6 gap-5 min-h-0 relative">
           <div className="absolute inset-0 bg-white/40 backdrop-blur-md -z-10" />
 
-          <div className="flex-[2] min-h-0 rounded-3xl border border-black bg-white/65 backdrop-blur-xl overflow-hidden glass shadow-sm relative flex flex-col">
+          <div className="flex-1 min-h-0 rounded-3xl border border-black bg-white/65 backdrop-blur-xl overflow-hidden glass shadow-sm relative flex flex-col">
             <div className="px-5 py-3 border-b border-black bg-white/60">
               <p className="text-xs font-black tracking-widest uppercase text-black/50">{headerStatus}</p>
             </div>
-            <div className="flex-1 overflow-auto p-4 space-y-3">
+            <div ref={chatScrollRef} className="flex-1 overflow-auto p-4 space-y-3">
               {conversationHistory.length === 0 && (
                 <div className="text-xs text-black/40 font-bold">대화를 시작해보세요.</div>
               )}
@@ -315,6 +345,13 @@ export default function SessionMessagePage() {
                   </div>
                 </div>
               ))}
+              {processing && streamingReply.trim().length > 0 && (
+                <div className="flex justify-start">
+                  <div className="max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap bg-white border border-black/20 text-black">
+                    {streamingReply}
+                  </div>
+                </div>
+              )}
             </div>
             <form onSubmit={handleSubmit} className="p-4 border-t border-black/20 flex gap-2">
               <input
@@ -334,14 +371,10 @@ export default function SessionMessagePage() {
             </form>
           </div>
 
-          <div className="flex-1 min-h-0 rounded-3xl border border-black bg-white/60 backdrop-blur-xl overflow-hidden glass shadow-sm relative">
-            <MemoPanel />
-          </div>
-
           {sessionPhase === 'physical' && examResultTexts.length > 0 && (
             <div className="rounded-2xl border border-black bg-black text-white p-4 shadow-lg">
               <p className="text-xs font-bold uppercase tracking-widest text-white/50 mb-2">신체진찰 결과</p>
-              <div className="space-y-2 max-h-40 overflow-auto">
+              <div ref={examResultScrollRef} className="space-y-2 max-h-40 overflow-auto">
                 {examResultTexts.map((txt, idx) => (
                   <p key={`${idx}-${txt.slice(0, 16)}`} className="text-sm font-medium leading-relaxed">
                     {txt}

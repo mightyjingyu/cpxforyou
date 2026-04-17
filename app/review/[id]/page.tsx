@@ -3,13 +3,57 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSessionStore } from '@/store/sessionStore';
+import { useAuth } from '@/components/auth/AuthProvider';
 import Checklist from '@/components/review/Checklist';
 import ConversationLog from '@/components/review/ConversationLog';
 import TagSystem from '@/components/review/TagSystem';
 import { ScoreResult } from '@/types';
 
+function normalizeScoreResult(result: ScoreResult): ScoreResult {
+  return {
+    ...result,
+    checklist_results: result.checklist_results ?? [],
+    critical_omissions: result.critical_omissions ?? [],
+    poor_questions: result.poor_questions ?? [],
+    tags: result.tags ?? [],
+    summary_feedback: result.summary_feedback ?? '',
+    grade_basis: result.grade_basis ?? '',
+    final_answer_evaluation: {
+      presumptive_diagnosis: result.final_answer_evaluation?.presumptive_diagnosis ?? {
+        expected: '',
+        student_summary: '언급 없음',
+        correct: false,
+        reason: '평가 데이터가 누락되었습니다.',
+      },
+      management_plan_tests: result.final_answer_evaluation?.management_plan_tests ?? {
+        expected: '',
+        student_summary: '언급 없음',
+        correct: false,
+        reason: '평가 데이터가 누락되었습니다.',
+      },
+      management_plan_treatment: result.final_answer_evaluation?.management_plan_treatment ?? {
+        expected: '',
+        student_summary: '언급 없음',
+        correct: false,
+        reason: '평가 데이터가 누락되었습니다.',
+      },
+      patient_education: result.final_answer_evaluation?.patient_education ?? {
+        expected: '',
+        student_summary: '언급 없음',
+        correct: false,
+        reason: '평가 데이터가 누락되었습니다.',
+      },
+      patient_consistency: result.final_answer_evaluation?.patient_consistency ?? {
+        consistent: true,
+        reason: '평가 데이터가 누락되었습니다.',
+      },
+    },
+  };
+}
+
 export default function ReviewPage() {
   const router = useRouter();
+  const { user, authLoading } = useAuth();
   const {
     caseSpec,
     conversationHistory,
@@ -46,10 +90,14 @@ export default function ReviewPage() {
   }, [caseSpec, conversationHistory, setScoreResult, scoreResult]);
 
   useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace('/');
+      return;
+    }
     if (sessionStatus === 'ended' && caseSpec && !scoreResult) {
       fetchScore();
     }
-  }, [sessionStatus, caseSpec, scoreResult, fetchScore]);
+  }, [authLoading, user, sessionStatus, caseSpec, scoreResult, fetchScore, router]);
 
   useEffect(() => {
     if (!scoreResult || autoArchived) return;
@@ -62,7 +110,7 @@ export default function ReviewPage() {
     router.push('/');
   };
 
-  if (!caseSpec) {
+  if ((!authLoading && !user) || !caseSpec) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
         <div className="text-center">
@@ -81,6 +129,7 @@ export default function ReviewPage() {
     const s = Math.max(0, Math.round(sec % 60));
     return `${m}분 ${s}초`;
   };
+  const safeScoreResult = scoreResult ? normalizeScoreResult(scoreResult) : null;
 
   return (
     <div className="min-h-screen bg-white">
@@ -113,17 +162,17 @@ export default function ReviewPage() {
               </p>
               <p className="text-sm text-neutral-500 mt-1">{caseSpec.clinical_presentation}</p>
             </div>
-            {scoreResult && (
+            {safeScoreResult && (
               <div className="text-right">
                 <p className="text-xs text-neutral-400 mb-1">최종 등급</p>
                 <p className={`text-3xl font-black ${
-                  scoreResult.total_grade === 'A' || scoreResult.total_grade === 'B'
+                  safeScoreResult.total_grade === 'A' || safeScoreResult.total_grade === 'B'
                     ? 'text-black'
-                    : scoreResult.total_grade === 'C'
+                    : safeScoreResult.total_grade === 'C'
                       ? 'text-neutral-600'
                       : 'text-red-500'
                 }`}>
-                  {scoreResult.total_grade}
+                  {safeScoreResult.total_grade}
                 </p>
               </div>
             )}
@@ -163,16 +212,16 @@ export default function ReviewPage() {
           </div>
         )}
 
-        {scoreResult && (
+        {safeScoreResult && (
           <>
             {/* 치명적 누락 */}
-            {scoreResult.critical_omissions.length > 0 && (
+            {safeScoreResult.critical_omissions.length > 0 && (
               <div className="border border-red-100 rounded-2xl p-5 bg-red-50/30">
                 <h2 className="text-xs font-bold text-red-400 uppercase tracking-widest mb-3">
                   치명적 누락 항목
                 </h2>
                 <div className="space-y-2">
-                  {scoreResult.critical_omissions.map((item, i) => (
+                  {safeScoreResult.critical_omissions.map((item, i) => (
                     <div key={i} className="flex items-start gap-3">
                       <span className="text-xs font-mono text-red-300 shrink-0 mt-0.5">{item.timestamp}</span>
                       <p className="text-sm text-red-600">{item.issue}</p>
@@ -183,11 +232,11 @@ export default function ReviewPage() {
             )}
 
             {/* 총평 */}
-            {scoreResult.summary_feedback && (
+            {safeScoreResult.summary_feedback && (
               <div className="bg-neutral-50 rounded-2xl p-5">
                 <h2 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">총평</h2>
-                <p className="text-sm text-neutral-700 leading-relaxed">{scoreResult.summary_feedback}</p>
-                <p className="text-xs text-neutral-500 mt-3">{scoreResult.grade_basis}</p>
+                <p className="text-sm text-neutral-700 leading-relaxed">{safeScoreResult.summary_feedback}</p>
+                <p className="text-xs text-neutral-500 mt-3">{safeScoreResult.grade_basis}</p>
               </div>
             )}
 
@@ -198,10 +247,10 @@ export default function ReviewPage() {
               </h2>
               <div className="space-y-3">
                 {[
-                  { key: '추정진단', data: scoreResult.final_answer_evaluation.presumptive_diagnosis },
-                  { key: '향후 계획(검사)', data: scoreResult.final_answer_evaluation.management_plan_tests },
-                  { key: '향후 계획(치료)', data: scoreResult.final_answer_evaluation.management_plan_treatment },
-                  { key: '환자교육', data: scoreResult.final_answer_evaluation.patient_education },
+                  { key: '추정진단', data: safeScoreResult.final_answer_evaluation.presumptive_diagnosis },
+                  { key: '향후 계획(검사)', data: safeScoreResult.final_answer_evaluation.management_plan_tests },
+                  { key: '향후 계획(치료)', data: safeScoreResult.final_answer_evaluation.management_plan_treatment },
+                  { key: '환자교육', data: safeScoreResult.final_answer_evaluation.patient_education },
                 ].map((item) => (
                   <div key={item.key} className="rounded-xl border border-neutral-100 p-3">
                     <div className="flex items-center justify-between mb-2">
@@ -223,25 +272,25 @@ export default function ReviewPage() {
                   <p className="text-xs text-neutral-400">환자 답변-정답 일치성</p>
                   <span
                     className={`text-xs font-bold ${
-                      scoreResult.final_answer_evaluation.patient_consistency.consistent
+                      safeScoreResult.final_answer_evaluation.patient_consistency.consistent
                         ? 'text-emerald-600'
                         : 'text-red-500'
                     }`}
                   >
-                    {scoreResult.final_answer_evaluation.patient_consistency.consistent ? '일치' : '불일치'}
+                    {safeScoreResult.final_answer_evaluation.patient_consistency.consistent ? '일치' : '불일치'}
                   </span>
                 </div>
                 <p className="text-xs text-neutral-500 mt-1">
-                  {scoreResult.final_answer_evaluation.patient_consistency.reason}
+                  {safeScoreResult.final_answer_evaluation.patient_consistency.reason}
                 </p>
               </div>
             </div>
 
             {/* 태그 */}
-            {scoreResult.tags.length > 0 && (
+            {safeScoreResult.tags.length > 0 && (
               <div>
                 <h2 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">자동 태그</h2>
-                <TagSystem tags={scoreResult.tags} />
+                <TagSystem tags={safeScoreResult.tags} />
               </div>
             )}
 
@@ -267,13 +316,13 @@ export default function ReviewPage() {
               </div>
 
               {activeTab === 'checklist' && (
-                <Checklist results={scoreResult.checklist_results} />
+                <Checklist results={safeScoreResult.checklist_results} />
               )}
               {activeTab === 'log' && (
                 <ConversationLog
                   messages={conversationHistory}
-                  poorQuestions={scoreResult.poor_questions}
-                  criticalOmissions={scoreResult.critical_omissions}
+                  poorQuestions={safeScoreResult.poor_questions}
+                  criticalOmissions={safeScoreResult.critical_omissions}
                 />
               )}
             </div>

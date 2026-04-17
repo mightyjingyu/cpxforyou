@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import { useSessionStore } from '@/store/sessionStore';
+import { useAuth } from '@/components/auth/AuthProvider';
 import Timer from '@/components/session/Timer';
 import PatientVisual from '@/components/session/PatientVisual';
 import MemoPanel from '@/components/session/MemoPanel';
@@ -17,7 +18,7 @@ export default function SessionPage() {
     caseSpec,
     sessionStatus,
     sessionId,
-    deductTime,
+    applyExamTimeDeduction,
     markPhysicalExamDone,
     completeHistoryTaking,
     completeEducation,
@@ -29,17 +30,30 @@ export default function SessionPage() {
     examTimeDeductionSeconds,
     setExamTimeDeductionSeconds,
   } = useSessionStore();
+  const { user, authLoading } = useAuth();
 
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
+  const [realtimeMode, setRealtimeMode] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [examResultTexts, setExamResultTexts] = useState<string[]>([]);
   const [showPhysicalExamGuide, setShowPhysicalExamGuide] = useState(false);
+  const examResultScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace('/');
+      return;
+    }
     if (!caseSpec || sessionStatus === 'idle') {
       router.replace('/');
     }
-  }, [caseSpec, sessionStatus, router]);
+  }, [authLoading, user, caseSpec, sessionStatus, router]);
+
+  useEffect(() => {
+    const node = examResultScrollRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [examResultTexts]);
 
   const handleTimeUp = useCallback(() => {
     endSession();
@@ -88,8 +102,8 @@ export default function SessionPage() {
   const handlePhysicalComplete = useCallback(() => {
     if (physicalExamDone || sessionPhase !== 'physical') return;
     markPhysicalExamDone();
-    deductTime(examTimeDeductionSeconds);
-  }, [physicalExamDone, sessionPhase, markPhysicalExamDone, deductTime, examTimeDeductionSeconds]);
+    applyExamTimeDeduction(examTimeDeductionSeconds);
+  }, [physicalExamDone, sessionPhase, markPhysicalExamDone, applyExamTimeDeduction, examTimeDeductionSeconds]);
 
   const handleEducationComplete = useCallback(() => {
     completeEducation();
@@ -100,7 +114,7 @@ export default function SessionPage() {
     router.push(`/review/${sessionId}`);
   }, [endSession, router, sessionId]);
 
-  if (!caseSpec || sessionStatus === 'idle') {
+  if ((!authLoading && !user) || !caseSpec || sessionStatus === 'idle') {
     return (
       <div className="min-h-screen bg-white relative flex items-center justify-center font-sans">
         <div className="text-center relative z-10 glass p-8 rounded-3xl border border-black">
@@ -128,7 +142,7 @@ export default function SessionPage() {
       {/* 상단 바 */}
       <header className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-black bg-white/70 backdrop-blur-xl relative z-50 shrink-0">
         <div className="flex flex-wrap items-center gap-3 min-w-0">
-          <span className="text-xs font-black text-black uppercase tracking-widest shrink-0">YOU ZERO Session</span>
+          <span className="text-xs font-black text-black uppercase tracking-widest shrink-0">CPX FOR YOU 0 Session</span>
           <div className="w-1.5 h-1.5 bg-black rounded-full shrink-0 hidden sm:block" />
           <Timer onTimeUp={handleTimeUp} />
         </div>
@@ -160,16 +174,18 @@ export default function SessionPage() {
             </div>
           </div>
 
-          <div className="w-full flex items-center justify-center py-2">
+          <div className="w-full flex items-start justify-center py-1">
             <PatientVisual caseSpec={caseSpec} voiceState={voiceState} timerStarted={timerStarted} />
           </div>
 
-          <div className="w-full mt-2 flex flex-col items-center gap-3">
+          <div className="w-full mt-1 flex flex-col items-center gap-2">
             <VoiceEngine
               onVoiceStateChange={setVoiceState}
               active={sessionStatus === 'active' && timerStarted}
               sessionPhase={sessionPhase}
               onPhysicalExamIntent={handlePhysicalExamTranscript}
+              realtimeMode={realtimeMode}
+              onRealtimeModeChange={setRealtimeMode}
             />
 
             <div className="w-full flex items-center justify-center gap-2">
@@ -230,7 +246,7 @@ export default function SessionPage() {
             {sessionPhase === 'physical' && examResultTexts.length > 0 && (
               <div className="rounded-2xl border border-black bg-black text-white p-5 shadow-lg animate-in slide-in-from-bottom-2">
                 <p className="text-xs font-bold uppercase tracking-widest text-white/50 mb-2">신체진찰 결과</p>
-                <div className="space-y-2 max-h-44 overflow-auto">
+                <div ref={examResultScrollRef} className="space-y-2 max-h-44 overflow-auto">
                   {examResultTexts.map((txt, idx) => (
                     <p key={`${idx}-${txt.slice(0, 16)}`} className="text-sm font-medium leading-relaxed">
                       {txt}

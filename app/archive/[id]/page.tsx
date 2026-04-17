@@ -1,22 +1,32 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useSessionStore } from '@/store/sessionStore';
 import Checklist from '@/components/review/Checklist';
 import ConversationLog from '@/components/review/ConversationLog';
 import TagSystem from '@/components/review/TagSystem';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 export default function ArchiveDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const { archivedSessions } = useSessionStore();
+  const { user, authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<'checklist' | 'log'>('checklist');
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace('/');
+    }
+  }, [authLoading, user, router]);
 
   const session = useMemo(
     () => archivedSessions.find((s) => s.id === params.id),
     [archivedSessions, params.id]
   );
+
+  if (!authLoading && !user) return null;
 
   if (!session) {
     return (

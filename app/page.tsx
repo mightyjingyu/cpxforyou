@@ -2,14 +2,27 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 export default function HomePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const { loginWithGoogle, user, authLoading } = useAuth();
 
-  const handleLoginClick = () => {
+  const handleLoginClick = async () => {
+    if (authLoading) return;
     setLoading(true);
-    router.push('/archive');
+    try {
+      if (!user) {
+        await loginWithGoogle();
+      }
+      router.push('/archive');
+    } catch (e) {
+      console.error('Google login failed:', e);
+      alert('구글 로그인에 실패했습니다. 다시 시도해주세요.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -29,7 +42,7 @@ export default function HomePage() {
       <div className="relative z-10 flex-1 flex flex-col h-full border-x border-black max-w-6xl mx-auto w-full bg-transparent">
         {/* Header */}
         <header className="px-8 py-5 flex items-center justify-between border-b border-black bg-white/70 backdrop-blur-xl sticky top-0 w-full z-50">
-          <span className="text-sm font-bold tracking-tight text-black uppercase">YOU ZERO</span>
+          <span className="text-sm font-bold tracking-tight text-black uppercase">CPX FOR YOU 0</span>
           <span className="text-xs text-black font-medium tracking-wide">의대생 실전 시뮬레이터</span>
         </header>
 
@@ -43,7 +56,7 @@ export default function HomePage() {
             {/* Title */}
             <div className="mb-12 w-full border-b border-black pb-8 relative z-10">
               <h1 className="text-6xl font-black tracking-tighter text-black mb-4 leading-[0.9] uppercase">
-                YOU<br/>ZERO
+                CPX FOR<br/>YOU 0
               </h1>
               <p className="text-sm font-medium text-black/60 leading-relaxed max-w-[260px] mx-auto tracking-tight">
                 AI 환자와 음성으로 진행하는<br />CPX 실기시험 실전 시뮬레이터
@@ -62,7 +75,7 @@ export default function HomePage() {
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     이동 중...
                   </>
-                ) : <span className="relative z-10">로그인</span>}
+                ) : <span className="relative z-10">{user ? '아카이브 열기' : 'Google 로그인'}</span>}
               </button>
             </div>
 

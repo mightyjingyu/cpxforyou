@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { SessionIndexRetryItem } from '@/types/firebase';
 import {
   CaseSpec,
   Message,
@@ -8,6 +9,8 @@ import {
   SessionPhaseDurations,
   TimerMode,
 } from '@/types';
+import { getFirebaseAuth } from '@/lib/firebase/client';
+import { buildSessionIndexDoc, upsertSessionIndex } from '@/lib/firebase/sessionIndex';
 
 const DEFAULT_COUNTDOWN_SECONDS = 720;
 
@@ -49,6 +52,7 @@ interface SessionState {
     clinicalPresentation?: string;
     updatedAt: number;
   }>;
+  sessionIndexSyncQueue: SessionIndexRetryItem[];
 
   startSession: (
     caseSpec: CaseSpec,
@@ -61,6 +65,7 @@ interface SessionState {
   resetTimer: () => void;
   addMessage: (message: Message) => void;
   deductTime: (seconds: number) => void;
+  applyExamTimeDeduction: (seconds: number) => void;
   tick: () => void;
   endSession: () => void;
   setMemo: (content: string) => void;
@@ -72,6 +77,7 @@ interface SessionState {
   setSessionStatus: (status: 'idle' | 'loading' | 'active' | 'ended') => void;
   setScoreResult: (result: ScoreResult) => void;
   archiveCurrentSession: () => void;
+  flushSessionIndexSyncQueue: () => Promise<void>;
   saveMemoTemplate: (payload: {
     name: string;
     content: string;
@@ -118,6 +124,7 @@ export const useSessionStore = create<SessionState>()(
       examTimeDeductionSeconds: DEFAULT_EXAM_DEDUCTION_SECONDS,
       archivedSessions: [],
       memoTemplates: [],
+      sessionIndexSyncQueue: [],
 
       startSession: (caseSpec, sessionId, difficulty, timerMode = 'countdown') =>
         set({
@@ -188,8 +195,28 @@ export const useSessionStore = create<SessionState>()(
 
       deductTime: (seconds) =>
         set((state) => {
-          if (state.timerMode !== 'countdown') return state;
-          return { timeRemaining: Math.max(0, state.timeRemaining - seconds) };
+          if (state.timerMode === 'countdown') {
+            return { timeRemaining: Math.max(0, state.timeRemaining - seconds) };
+          }
+          // count-up 모드에서는 차감을 패널티 시간 가산으로 반영한다.
+          return { countUpElapsed: state.countUpElapsed + seconds };
+        }),
+
+      applyExamTimeDeduction: (seconds) =>
+        set((state) => {
+          const safeSeconds = Math.max(0, Math.floor(seconds));
+          if (safeSeconds === 0) return state;
+          if (state.timerMode === 'countdown') {
+            return {
+              timeRemaining: Math.max(0, state.timeRemaining - safeSeconds),
+              physicalExamElapsed: safeSeconds,
+            };
+          }
+          // count-up 모드에서는 패널티 시간 가산 + 설정된 신체진찰 표시시간을 함께 반영한다.
+          return {
+            countUpElapsed: state.countUpElapsed + safeSeconds,
+            physicalExamElapsed: safeSeconds,
+          };
         }),
 
       tick: () =>
@@ -205,7 +232,7 @@ export const useSessionStore = create<SessionState>()(
             state.sessionPhase === 'history'
               ? { historyTakingElapsed: state.historyTakingElapsed + 1 }
               : state.sessionPhase === 'physical'
-                ? { physicalExamElapsed: state.physicalExamElapsed + 1 }
+                ? {}
                 : state.sessionPhase === 'education'
                   ? { educationElapsed: state.educationElapsed + 1 }
                   : {};
@@ -275,7 +302,7 @@ export const useSessionStore = create<SessionState>()(
       completeEducation: () =>
         set((state) => {
           if (state.sessionPhase !== 'education') return state;
-          return { sessionPhase: 'completed' };
+          return { sessionPhase: 'completed', isTimerRunning: false };
         }),
 
       setExamTimeDeductionSeconds: (seconds) =>
@@ -314,6 +341,55 @@ export const useSessionStore = create<SessionState>()(
             ...s.archivedSessions.filter((archived) => archived.id !== sessionData.id),
           ].slice(0, 50),
         }));
+
+        // 로컬 저장은 항상 성공시키고, Firebase 메타 업로드는 분리해 실패 시 큐에 적재한다.
+        const runMetaSync = async () => {
+          try {
+            const auth = getFirebaseAuth();
+            const user = auth.currentUser;
+            if (!user) return;
+            const payload = buildSessionIndexDoc(sessionData, user.uid);
+            await upsertSessionIndex(user.uid, payload);
+          } catch (error) {
+            console.error('Failed to sync session index:', error);
+            try {
+              const auth = getFirebaseAuth();
+              const user = auth.currentUser;
+              if (!user) return;
+              const payload = buildSessionIndexDoc(sessionData, user.uid);
+              set((s) => ({
+                sessionIndexSyncQueue: [
+                  ...s.sessionIndexSyncQueue.filter((q) => q.sessionId !== sessionData.id),
+                  {
+                    sessionId: sessionData.id,
+                    userId: user.uid,
+                    enqueuedAt: Date.now(),
+                    payload,
+                  },
+                ].slice(-100),
+              }));
+            } catch {
+              // Firebase 설정 미완료 상태에서도 로컬 아카이브를 유지한다.
+            }
+          }
+        };
+        void runMetaSync();
+      },
+
+      flushSessionIndexSyncQueue: async () => {
+        const queue = get().sessionIndexSyncQueue;
+        if (queue.length === 0) return;
+        for (const item of queue) {
+          try {
+            await upsertSessionIndex(item.userId, item.payload);
+            set((s) => ({
+              sessionIndexSyncQueue: s.sessionIndexSyncQueue.filter((q) => q.sessionId !== item.sessionId),
+            }));
+          } catch (e) {
+            console.error('Failed to flush session index queue item:', e);
+            break;
+          }
+        }
       },
 
       saveMemoTemplate: ({ name, content, clinicalPresentation }) =>
@@ -401,6 +477,7 @@ export const useSessionStore = create<SessionState>()(
         archivedSessions: state.archivedSessions,
         examTimeDeductionSeconds: state.examTimeDeductionSeconds,
         memoTemplates: state.memoTemplates,
+        sessionIndexSyncQueue: state.sessionIndexSyncQueue,
       }),
     }
   )

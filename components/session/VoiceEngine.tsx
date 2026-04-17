@@ -7,15 +7,25 @@ import { Message } from '@/types';
 import { splitStreamBuffer } from '@/lib/voice/splitStreamBuffer';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
+type ProcessingStage = 'idle' | 'stt' | 'llm' | 'tts';
 
 interface Props {
   onVoiceStateChange: (state: VoiceState) => void;
   active: boolean;
   sessionPhase?: 'history' | 'physical' | 'education' | 'completed';
   onPhysicalExamIntent?: (transcript: string) => Promise<void> | void;
+  realtimeMode?: boolean;
+  onRealtimeModeChange?: (enabled: boolean) => void;
 }
 
-const MIN_BYTES = 400;
+const MIN_BYTES = 700;
+const SPECULATIVE_FLUSH_CHARS = 35;
+const SILENCE_RMS_THRESHOLD = 0.02;
+const SILENCE_HOLD_MS = 520;
+const MIN_REALTIME_RECORD_MS = 650;
+const MIN_VOICED_FRAMES = 8;
+const MAX_IDLE_RECORD_MS = 12000;
+const AUDIO_BITS_PER_SECOND = 24000;
 
 function pickRecorderMime(): string | undefined {
   if (typeof MediaRecorder === 'undefined') return undefined;
@@ -26,11 +36,20 @@ function pickRecorderMime(): string | undefined {
   return undefined;
 }
 
+function createRecorder(stream: MediaStream): { recorder: MediaRecorder; mime: string } {
+  const mime = pickRecorderMime() || 'audio/webm';
+  const options: MediaRecorderOptions = {
+    audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
+  };
+  if (mime) options.mimeType = mime;
+  return { recorder: new MediaRecorder(stream, options), mime };
+}
+
 function playBlob(blob: Blob): Promise<void> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
-    audio.playbackRate = 1.12;
+    audio.playbackRate = 1.08;
     audio.onended = () => {
       URL.revokeObjectURL(url);
       resolve();
@@ -48,16 +67,7 @@ function isMeaningfulDoctorInput(text: string): boolean {
   if (normalized.length < 2) return false;
   const fillerOnly = /^(음+|어+|아+|네+|응+|어음+|음어+|흠+|음\.\.\.|어\.\.\.)$/;
   if (fillerOnly.test(normalized)) return false;
-  const hasSubstance = /[가-힣A-Za-z0-9]/.test(normalized);
-  return hasSubstance;
-}
-
-function looksLikePhysicalExamIntent(text: string): boolean {
-  const normalized = text.trim();
-  if (!normalized) return false;
-  return /(검사|진찰|이학적|청진|촉진|타진|시진|복부|심장|폐|신경학|반사|동공|경부|사지|혈액검사|소변검사|엑스레이|x-ray|ct|mri|초음파|심전도|내시경)/i.test(
-    normalized
-  );
+  return /[가-힣A-Za-z0-9]/.test(normalized);
 }
 
 export default function VoiceEngine({
@@ -65,6 +75,8 @@ export default function VoiceEngine({
   active,
   sessionPhase = 'history',
   onPhysicalExamIntent,
+  realtimeMode = false,
+  onRealtimeModeChange,
 }: Props) {
   const caseSpec = useSessionStore((s) => s.caseSpec);
   const sessionId = useSessionStore((s) => s.sessionId);
@@ -74,6 +86,7 @@ export default function VoiceEngine({
   const addMessage = useSessionStore((s) => s.addMessage);
 
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
+  const [processingStage, setProcessingStage] = useState<ProcessingStage>('idle');
   const [errorMsg, setErrorMsg] = useState('');
 
   const streamRef = useRef<MediaStream | null>(null);
@@ -82,6 +95,15 @@ export default function VoiceEngine({
   const mimeRef = useRef<string>('audio/webm');
   const processingRef = useRef(false);
   const toggleLockRef = useRef(false);
+  const realtimeActiveRef = useRef(false);
+  const startedAtRef = useRef(0);
+  const voiceMonitorRafRef = useRef<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const realtimeRestartTimerRef = useRef<number | null>(null);
+  const hasSpokenRef = useRef(false);
+  const voicedFramesRef = useRef(0);
 
   const updateVoiceState = useCallback(
     (state: VoiceState) => {
@@ -92,6 +114,26 @@ export default function VoiceEngine({
   );
 
   const cleanupMic = useCallback(() => {
+    if (voiceMonitorRafRef.current != null) {
+      cancelAnimationFrame(voiceMonitorRafRef.current);
+      voiceMonitorRafRef.current = null;
+    }
+    if (realtimeRestartTimerRef.current != null) {
+      window.clearTimeout(realtimeRestartTimerRef.current);
+      realtimeRestartTimerRef.current = null;
+    }
+    try {
+      mediaSourceRef.current?.disconnect();
+      analyserRef.current?.disconnect();
+    } catch {
+      /* noop */
+    }
+    mediaSourceRef.current = null;
+    analyserRef.current = null;
+    if (audioContextRef.current) {
+      void audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
   }, []);
@@ -117,50 +159,63 @@ export default function VoiceEngine({
     async (transcript: string) => {
       if (!sessionId) throw new Error('no session');
 
-      const basePayload = {
+      const payload = {
         sessionId,
         message: transcript,
-      };
-      const fallbackPayload = {
-        ...basePayload,
         caseSpec,
         difficulty,
-        conversationHistory: conversationHistory.slice(-16),
+        conversationHistory: conversationHistory.slice(-8),
       };
 
-      let res = await fetch('/api/chat/stream', {
+      const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(basePayload),
+        body: JSON.stringify(payload),
       });
-      if (!res.ok && caseSpec) {
-        // Stateless runtime에서 sessionId 조회 실패 시에만 컨텍스트 포함 fallback
-        res = await fetch('/api/chat/stream', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(fallbackPayload),
-        });
-      }
-
-      if (!res.ok) {
-        const errText = await res.text();
-        let msg = '응답 스트리밍에 실패했습니다.';
-        try {
-          const j = JSON.parse(errText) as { error?: string };
-          if (j.error) msg = j.error;
-        } catch {
-          /* ignore */
-        }
-        throw new Error(msg);
-      }
+      if (!res.ok) throw new Error('응답 스트리밍에 실패했습니다.');
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error('no body');
 
+      setProcessingStage('llm');
       const decoder = new TextDecoder();
       let buffer = '';
       let fullText = '';
-      const ttsTasks: Promise<Blob>[] = [];
+      const ttsTasks: Promise<void>[] = [];
+      const audioQueue: Blob[] = [];
+      let notifyAudioReady: (() => void) | null = null;
+      let queueDone = false;
+
+      const waitForAudio = () =>
+        new Promise<void>((resolve) => {
+          notifyAudioReady = resolve;
+        });
+
+      const pushAudio = (blob: Blob) => {
+        audioQueue.push(blob);
+        if (notifyAudioReady) {
+          notifyAudioReady();
+          notifyAudioReady = null;
+        }
+      };
+
+      const playbackTask = (async () => {
+        let firstAudio = true;
+        while (!queueDone || audioQueue.length > 0) {
+          if (audioQueue.length === 0) {
+            await waitForAudio();
+            continue;
+          }
+          const next = audioQueue.shift();
+          if (!next) continue;
+          if (firstAudio) {
+            setProcessingStage('tts');
+            updateVoiceState('speaking');
+            firstAudio = false;
+          }
+          await playBlob(next);
+        }
+      })();
 
       const enqueueTts = (text: string) => {
         const t = text.trim();
@@ -169,11 +224,17 @@ export default function VoiceEngine({
           fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: t, gender: caseSpec?.patient.gender }),
-          }).then(async (r) => {
-            if (!r.ok) throw new Error('tts');
-            return r.blob();
+            body: JSON.stringify({
+              text: t,
+              gender: caseSpec?.patient.gender,
+              age: caseSpec?.patient.age,
+            }),
           })
+            .then(async (r) => {
+              if (!r.ok) throw new Error('tts');
+              return r.blob();
+            })
+            .then(pushAudio)
         );
       };
 
@@ -185,35 +246,26 @@ export default function VoiceEngine({
         buffer += chunk;
         const { complete, rest } = splitStreamBuffer(buffer);
         buffer = rest;
-        for (const sentence of complete) {
-          enqueueTts(sentence);
+        for (const sentence of complete) enqueueTts(sentence);
+        if (buffer.trim().length >= SPECULATIVE_FLUSH_CHARS) {
+          enqueueTts(buffer);
+          buffer = '';
         }
       }
-
       const tail = buffer.trim();
       if (tail) enqueueTts(tail);
 
       const patientFull = fullText.trim();
-      if (!patientFull) {
-        throw new Error('빈 응답입니다.');
-      }
+      if (!patientFull) throw new Error('빈 응답입니다.');
+      if (ttsTasks.length === 0) throw new Error('재생할 음성이 없습니다.');
 
-      if (ttsTasks.length === 0) {
-        throw new Error('재생할 음성이 없습니다.');
+      await Promise.all(ttsTasks);
+      queueDone = true;
+      if (notifyAudioReady) {
+        notifyAudioReady();
+        notifyAudioReady = null;
       }
-
-      let firstAudio = true;
-      for (const task of ttsTasks) {
-        const blob = await task;
-        if (firstAudio) {
-          if (typeof window !== 'undefined' && window.speechSynthesis) {
-            window.speechSynthesis.cancel();
-          }
-          updateVoiceState('speaking');
-          firstAudio = false;
-        }
-        await playBlob(blob);
-      }
+      await playbackTask;
 
       return patientFull;
     },
@@ -222,11 +274,9 @@ export default function VoiceEngine({
 
   const processRecording = useCallback(async () => {
     if (processingRef.current) return;
-    const mr = mediaRecorderRef.current;
-    if (!mr || mr.state !== 'recording') return;
-
+    if (mediaRecorderRef.current?.state !== 'recording') return;
     processingRef.current = true;
-
+    setProcessingStage('stt');
     updateVoiceState('thinking');
 
     try {
@@ -235,12 +285,58 @@ export default function VoiceEngine({
         updateVoiceState('idle');
         return;
       }
+      if (realtimeActiveRef.current && !hasSpokenRef.current) {
+        updateVoiceState('idle');
+        setProcessingStage('idle');
+        if (active && sessionStatus === 'active') {
+          realtimeRestartTimerRef.current = window.setTimeout(() => {
+            const stream = streamRef.current;
+            if (!stream || mediaRecorderRef.current?.state === 'recording') return;
+            const { recorder: mr, mime } = createRecorder(stream);
+            mimeRef.current = mime;
+            chunksRef.current = [];
+            mr.ondataavailable = (ev) => {
+              if (ev.data.size > 0) chunksRef.current.push(ev.data);
+            };
+            mr.start(250);
+            startedAtRef.current = Date.now();
+            hasSpokenRef.current = false;
+            voicedFramesRef.current = 0;
+            mediaRecorderRef.current = mr;
+            updateVoiceState('listening');
+          }, 220);
+        }
+        return;
+      }
 
       const fd = new FormData();
       fd.append('file', blob, 'recording.webm');
       const sttRes = await fetch('/api/stt', { method: 'POST', body: fd });
       const sttData = (await sttRes.json()) as { text?: string; error?: string };
       if (!sttRes.ok || !sttData.text?.trim()) {
+        if (realtimeActiveRef.current && active && sessionStatus === 'active') {
+          // 실시간 모드에서는 짧은/모호한 구간 STT 실패를 사용자 에러로 노출하지 않고 즉시 재청취한다.
+          setErrorMsg('');
+          updateVoiceState('idle');
+          setProcessingStage('idle');
+          realtimeRestartTimerRef.current = window.setTimeout(() => {
+            const stream = streamRef.current;
+            if (!stream || mediaRecorderRef.current?.state === 'recording') return;
+            const { recorder: mr, mime } = createRecorder(stream);
+            mimeRef.current = mime;
+            chunksRef.current = [];
+            mr.ondataavailable = (ev) => {
+              if (ev.data.size > 0) chunksRef.current.push(ev.data);
+            };
+            mr.start(250);
+            startedAtRef.current = Date.now();
+            hasSpokenRef.current = false;
+            voicedFramesRef.current = 0;
+            mediaRecorderRef.current = mr;
+            updateVoiceState('listening');
+          }, 180);
+          return;
+        }
         setErrorMsg(sttData.error || '음성 인식에 실패했습니다.');
         updateVoiceState('idle');
         return;
@@ -253,74 +349,80 @@ export default function VoiceEngine({
         return;
       }
 
-      const userMsg: Message = {
-        id: uuidv4(),
-        role: 'user',
-        content: transcript,
-        timestamp: Date.now(),
-      };
-      addMessage(userMsg);
+      addMessage({ id: uuidv4(), role: 'user', content: transcript, timestamp: Date.now() });
 
-      if (
-        sessionPhase === 'physical' &&
-        !useSessionStore.getState().physicalExamDone &&
-        looksLikePhysicalExamIntent(transcript)
-      ) {
+      if (sessionPhase === 'physical' && !useSessionStore.getState().physicalExamDone) {
         await onPhysicalExamIntent?.(transcript);
         updateVoiceState('idle');
+        setProcessingStage('idle');
         return;
       }
 
       const patientText = await streamLlmAndPlayTts(transcript);
-
-      const patientMsg: Message = {
-        id: uuidv4(),
-        role: 'patient',
-        content: patientText,
-        timestamp: Date.now(),
-      };
-      addMessage(patientMsg);
-
+      addMessage({ id: uuidv4(), role: 'patient', content: patientText, timestamp: Date.now() });
       updateVoiceState('idle');
+      setProcessingStage('idle');
+
+      if (realtimeActiveRef.current && active && sessionStatus === 'active') {
+        realtimeRestartTimerRef.current = window.setTimeout(() => {
+          const stream = streamRef.current;
+          if (!stream || mediaRecorderRef.current?.state === 'recording') return;
+          const { recorder: mr, mime } = createRecorder(stream);
+          mimeRef.current = mime;
+          chunksRef.current = [];
+          mr.ondataavailable = (ev) => {
+            if (ev.data.size > 0) chunksRef.current.push(ev.data);
+          };
+          mr.start(250);
+          startedAtRef.current = Date.now();
+          hasSpokenRef.current = false;
+          voicedFramesRef.current = 0;
+          mediaRecorderRef.current = mr;
+          updateVoiceState('listening');
+        }, 300);
+      }
     } catch (e) {
       console.error('Voice pipeline error:', e);
       setErrorMsg(e instanceof Error ? e.message : '음성 처리 중 오류가 발생했습니다.');
       updateVoiceState('idle');
+      setProcessingStage('idle');
     } finally {
       processingRef.current = false;
     }
   }, [
-    addMessage,
+    active,
     sessionId,
     sessionPhase,
+    onPhysicalExamIntent,
+    addMessage,
     stopRecorderToBlob,
     streamLlmAndPlayTts,
     updateVoiceState,
-    onPhysicalExamIntent,
+    sessionStatus,
   ]);
 
   const startRecording = useCallback(async () => {
     if (sessionStatus !== 'active' || !caseSpec) return;
     if (voiceState === 'thinking' || voiceState === 'speaking' || voiceState === 'listening') return;
-
     setErrorMsg('');
     try {
       if (!streamRef.current) {
         streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
       const stream = streamRef.current;
-      const mime = pickRecorderMime();
-      mimeRef.current = mime || 'audio/webm';
+      const { recorder: mr, mime } = createRecorder(stream);
+      mimeRef.current = mime;
       chunksRef.current = [];
-      const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
       mr.ondataavailable = (ev) => {
         if (ev.data.size > 0) chunksRef.current.push(ev.data);
       };
       mr.start(250);
+      startedAtRef.current = Date.now();
+      hasSpokenRef.current = false;
+      voicedFramesRef.current = 0;
       mediaRecorderRef.current = mr;
       updateVoiceState('listening');
-    } catch (err) {
-      console.error(err);
+    } catch {
       setErrorMsg('마이크 권한이 필요합니다.');
       updateVoiceState('idle');
     }
@@ -332,19 +434,102 @@ export default function VoiceEngine({
     await processRecording();
   }, [sessionStatus, processRecording]);
 
+  const setupVoiceActivityMonitor = useCallback(() => {
+    const stream = streamRef.current;
+    if (!stream) return;
+    if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+    const source = audioContextRef.current.createMediaStreamSource(stream);
+    const analyser = audioContextRef.current.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    mediaSourceRef.current = source;
+    analyserRef.current = analyser;
+
+    const data = new Float32Array(analyser.fftSize);
+    let lastVoiceAt = Date.now();
+    const loop = () => {
+      const a = analyserRef.current;
+      if (!a || !realtimeActiveRef.current) return;
+      a.getFloatTimeDomainData(data);
+      let sq = 0;
+      for (let i = 0; i < data.length; i++) sq += data[i] * data[i];
+      const rms = Math.sqrt(sq / data.length);
+      const now = Date.now();
+      if (rms > SILENCE_RMS_THRESHOLD) {
+        lastVoiceAt = now;
+        voicedFramesRef.current += 1;
+        if (voicedFramesRef.current >= MIN_VOICED_FRAMES) {
+          hasSpokenRef.current = true;
+        }
+      } else {
+        voicedFramesRef.current = Math.max(0, voicedFramesRef.current - 1);
+      }
+      const recordingMs = now - startedAtRef.current;
+      if (
+        mediaRecorderRef.current?.state === 'recording' &&
+        !hasSpokenRef.current &&
+        recordingMs >= MAX_IDLE_RECORD_MS &&
+        !processingRef.current
+      ) {
+        // 장시간 무음 상태에서는 세그먼트를 재시작해 불필요한 장녹음을 방지한다.
+        void stopRecording();
+        voiceMonitorRafRef.current = requestAnimationFrame(loop);
+        return;
+      }
+      if (
+        mediaRecorderRef.current?.state === 'recording' &&
+        hasSpokenRef.current &&
+        recordingMs >= MIN_REALTIME_RECORD_MS &&
+        !processingRef.current
+      ) {
+        if (now - lastVoiceAt >= SILENCE_HOLD_MS) {
+          void stopRecording();
+        }
+      }
+      voiceMonitorRafRef.current = requestAnimationFrame(loop);
+    };
+    voiceMonitorRafRef.current = requestAnimationFrame(loop);
+  }, [stopRecording]);
+
+  const startRealtimeConversation = useCallback(async () => {
+    if (!active || sessionStatus !== 'active' || !caseSpec) return;
+    realtimeActiveRef.current = true;
+    onRealtimeModeChange?.(true);
+    await startRecording();
+    setupVoiceActivityMonitor();
+  }, [active, sessionStatus, caseSpec, onRealtimeModeChange, startRecording, setupVoiceActivityMonitor]);
+
+  const stopRealtimeConversation = useCallback(async () => {
+    realtimeActiveRef.current = false;
+    onRealtimeModeChange?.(false);
+    if (mediaRecorderRef.current?.state === 'recording') await stopRecording();
+    cleanupMic();
+    updateVoiceState('idle');
+    setProcessingStage('idle');
+  }, [cleanupMic, stopRecording, updateVoiceState, onRealtimeModeChange]);
+
+  const toggleRealtimeConversation = useCallback(async () => {
+    if (realtimeActiveRef.current) {
+      await stopRealtimeConversation();
+    } else {
+      await startRealtimeConversation();
+    }
+  }, [startRealtimeConversation, stopRealtimeConversation]);
+
   const onPointerDown = useCallback(
     async (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (realtimeMode) return;
       e.preventDefault();
       e.currentTarget.setPointerCapture(e.pointerId);
       await startRecording();
     },
-    [startRecording]
+    [startRecording, realtimeMode]
   );
 
   const onPointerUp = useCallback(
     async (e: React.PointerEvent<HTMLButtonElement>) => {
-      if (sessionStatus !== 'active') return;
-      if (mediaRecorderRef.current?.state !== 'recording') return;
+      if (realtimeMode) return;
+      if (sessionStatus !== 'active' || mediaRecorderRef.current?.state !== 'recording') return;
       try {
         e.currentTarget.releasePointerCapture(e.pointerId);
       } catch {
@@ -352,10 +537,16 @@ export default function VoiceEngine({
       }
       await stopRecording();
     },
-    [sessionStatus, stopRecording]
+    [sessionStatus, stopRecording, realtimeMode]
   );
 
   useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      return target.isContentEditable;
+    };
     const isToggleKey = (ev: KeyboardEvent) =>
       ev.key === '\\' ||
       ev.key === '₩' ||
@@ -364,21 +555,28 @@ export default function VoiceEngine({
       ev.code === 'Backslash' ||
       ev.code === 'IntlRo' ||
       ev.code === 'Backquote';
-
     const keydownBlocker = (ev: KeyboardEvent) => {
       if (!active || !isToggleKey(ev)) return;
       ev.preventDefault();
       ev.stopPropagation();
     };
-
+    const keypressBlocker = (ev: KeyboardEvent) => {
+      if (!active || !isToggleKey(ev)) return;
+      // 일부 브라우저에서 keypress 단계에 문자가 입력되는 문제를 함께 차단한다.
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
     const keyupToggle = async (ev: KeyboardEvent) => {
       if (!active || !isToggleKey(ev)) return;
       ev.preventDefault();
       ev.stopPropagation();
+      if (isTypingTarget(ev.target)) return;
       if (toggleLockRef.current) return;
       toggleLockRef.current = true;
       try {
-        if (mediaRecorderRef.current?.state === 'recording') {
+        if (realtimeMode) {
+          await toggleRealtimeConversation();
+        } else if (mediaRecorderRef.current?.state === 'recording') {
           await stopRecording();
         } else {
           await startRecording();
@@ -389,24 +587,25 @@ export default function VoiceEngine({
         }, 120);
       }
     };
-
     window.addEventListener('keydown', keydownBlocker, true);
+    window.addEventListener('keypress', keypressBlocker, true);
     window.addEventListener('keyup', keyupToggle, true);
     return () => {
       window.removeEventListener('keydown', keydownBlocker, true);
+      window.removeEventListener('keypress', keypressBlocker, true);
       window.removeEventListener('keyup', keyupToggle, true);
     };
-  }, [active, startRecording, stopRecording]);
+  }, [active, startRecording, stopRecording, realtimeMode, toggleRealtimeConversation]);
 
   useEffect(() => {
     if (!active) {
-      if (mediaRecorderRef.current?.state === 'recording') {
-        mediaRecorderRef.current.stop();
-      }
+      if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
       mediaRecorderRef.current = null;
       chunksRef.current = [];
       cleanupMic();
       updateVoiceState('idle');
+      setProcessingStage('idle');
+      realtimeActiveRef.current = false;
     }
   }, [active, cleanupMic, updateVoiceState]);
 
@@ -417,46 +616,89 @@ export default function VoiceEngine({
     };
   }, [cleanupMic]);
 
-  if (!active) return null;
+  useEffect(() => {
+    if (!active || sessionStatus !== 'active') return;
+    if (realtimeMode && !realtimeActiveRef.current) {
+      void startRealtimeConversation();
+      return;
+    }
+    if (!realtimeMode && realtimeActiveRef.current) {
+      void stopRealtimeConversation();
+    }
+  }, [active, sessionStatus, realtimeMode, startRealtimeConversation, stopRealtimeConversation]);
 
+  if (!active) return null;
   const busy = voiceState === 'thinking' || voiceState === 'speaking';
 
   return (
     <div className="flex flex-col items-center gap-4">
-      <button
-        type="button"
-        onPointerDown={onPointerDown}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        disabled={sessionStatus !== 'active' || busy}
-        className={`w-28 h-28 rounded-full flex items-center justify-center transition-all duration-300 text-4xl select-none touch-none shadow-xl ${
-          voiceState === 'listening'
-            ? 'bg-black border border-black text-white scale-110 shadow-[0_20px_40px_rgba(0,0,0,0.4)] animate-pulse'
-            : busy
-              ? 'bg-black/5 border border-black/10 cursor-wait opacity-60 text-black/50'
-              : 'bg-white border border-black text-black shadow-none hover:bg-black hover:text-white hover:scale-105 hover:shadow-[0_20px_40px_rgba(0,0,0,0.2)] active:scale-95'
-        }`}
-        aria-label="누르고 말하기 (버튼을 떼면 전송)"
-      >
-        {busy ? (
-          <div className="w-8 h-8 border-4 border-black/20 border-t-current rounded-full animate-spin" />
-        ) : voiceState === 'listening' ? (
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
+      <div className="flex items-center justify-center gap-3">
+        <button
+          type="button"
+          onPointerDown={onPointerDown}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          disabled={sessionStatus !== 'active' || busy || realtimeMode}
+          className={`w-28 h-28 rounded-full flex items-center justify-center transition-all duration-300 text-4xl select-none touch-none shadow-xl ${
+            voiceState === 'listening'
+              ? 'bg-black border border-black text-white scale-110 shadow-[0_20px_40px_rgba(0,0,0,0.4)] animate-pulse'
+              : busy
+                ? 'bg-black/5 border border-black/10 cursor-wait opacity-60 text-black/50'
+                : 'bg-white border border-black text-black shadow-none hover:bg-black hover:text-white hover:scale-105 hover:shadow-[0_20px_40px_rgba(0,0,0,0.2)] active:scale-95'
+          }`}
+          aria-label="누르고 말하기 (버튼을 떼면 전송)"
+        >
+          {busy ? (
+            <div className="w-8 h-8 border-4 border-black/20 border-t-current rounded-full animate-spin" />
+          ) : (
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
+          )}
+        </button>
+        {realtimeMode ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (sessionStatus !== 'active') return;
+              onRealtimeModeChange?.(false);
+              void stopRealtimeConversation();
+            }}
+            className="px-4 py-2 rounded-full border border-black bg-black text-white text-xs font-bold tracking-widest transition-colors hover:bg-black/90"
+          >
+            실시간 OFF
+          </button>
         ) : (
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
+          <button
+            type="button"
+            onClick={() => {
+              if (sessionStatus !== 'active') return;
+              onRealtimeModeChange?.(true);
+              void startRealtimeConversation();
+            }}
+            className="px-4 py-2 rounded-full border border-black bg-white text-black text-xs font-bold tracking-widest transition-colors hover:bg-black hover:text-white"
+          >
+            실시간 대화하기
+          </button>
         )}
-      </button>
+      </div>
 
       <div className="h-10 flex flex-col items-center justify-start gap-1 w-full relative">
         <p className="text-[10px] font-black text-black/40 uppercase tracking-[0.2em] text-center w-full min-w-[200px]">
           {busy
             ? voiceState === 'thinking'
-              ? '환자가 생각 중입니다…'
+              ? processingStage === 'stt'
+                ? '음성 인식 중…'
+                : processingStage === 'llm'
+                  ? '응답 생성 중…'
+                  : '처리 중…'
               : '환자 음성 재생 중…'
-            : '누른 채로 말하기 / ₩ ` ~ 키 토글'}
+            : realtimeMode
+              ? '실시간 대화 모드 / 내가 말하면 AI가 자동 응답'
+              : '누른 채로 말하기 / ₩ ` ~ 키 토글'}
         </p>
         {!busy && (
-           <p className="text-[9px] font-bold text-black/30 tracking-widest uppercase">버튼 떼기 또는 ₩/`/~ 재입력 시 전송</p>
+          <p className="text-[9px] font-bold text-black/30 tracking-widest uppercase">
+            {realtimeMode ? '실시간 OFF 누르면 즉시 일반 마이크 모드로 복귀' : '버튼 떼기 또는 ₩/`/~ 재입력 시 전송'}
+          </p>
         )}
       </div>
 

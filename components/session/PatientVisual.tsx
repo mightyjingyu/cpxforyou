@@ -35,7 +35,7 @@ export default function PatientVisual({ caseSpec, voiceState, timerStarted = tru
         : '/avatars/female-22-39.png';
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-8">
+    <div className="flex flex-col items-center justify-start gap-4">
       {/* 환자 아바타 */}
       <div className="relative">
         <div

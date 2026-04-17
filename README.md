@@ -192,3 +192,43 @@ buildSystemPrompt(
 }
 ```
 
+## Firebase (Google 로그인 + 로컬우선 저장)
+
+이 프로젝트는 아카이브 원문(대화/메모/리포트)은 로컬에 저장하고, Firebase에는 사용자별 최소 메타데이터만 저장합니다.
+
+### 환경변수 (.env.local)
+
+아래 값을 `.env.local`에 설정하세요.
+
+```env
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+NEXT_PUBLIC_FIREBASE_APP_ID=...
+```
+
+### Firestore 저장 구조
+
+- 컬렉션 경로: `users/{uid}/sessionIndex/{sessionId}`
+- 저장 필드(메타 only):
+  - `sessionId`, `userId`, `createdAt`, `updatedAt`
+  - `clinicalPresentation`, `grade`, `elapsedSeconds`, `localVersion`
+  - `hasScore`, `hasMemo`, `deviceId`, `lastSyncedAt`
+
+원문 텍스트(`memoContent`, `conversationHistory`, `summary_feedback` 등)는 Firestore에 저장하지 않습니다.
+
+### Firestore Rules 예시
+
+```txt
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/sessionIndex/{sessionId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+```
+
