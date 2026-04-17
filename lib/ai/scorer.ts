@@ -6,27 +6,45 @@ function getOpenAIClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
-const MAX_SCORING_LOG_CHARS = 20000;
+/** epoch 타임스탬프 오해로 로그 한 줄이 비대해지는 것을 막고, 긴 세션도 수용 */
+const MAX_SCORING_LOG_CHARS = 48000;
+
+/**
+ * Date.now() 기반 절대 시각을 세션 시작(첫 메시지) 대비 상대 시각으로 표시한다.
+ * (기존: epoch 초를 분:초로 착각해 [28557613:09] 형태로 로그가 폭증함)
+ */
+function formatRelativeSessionClock(messageMs: number, sessionStartMs: number): string {
+  const relSec = Math.max(0, Math.floor((messageMs - sessionStartMs) / 1000));
+  const h = Math.floor(relSec / 3600);
+  const m = Math.floor((relSec % 3600) / 60);
+  const s = relSec % 60;
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
 
 export function formatConversationLog(messages: Message[]): string {
-  const fullLog = messages
-    .map((m) => {
-      const role = m.role === 'user' ? '학생' : '환자';
-      const time = formatTimestamp(m.timestamp);
-      return `[${time}] ${role}: ${m.content}`;
-    })
-    .join('\n');
+  const sorted = [...messages].sort((a, b) => a.timestamp - b.timestamp);
+  const sessionStartMs =
+    sorted.length === 0 ? Date.now() : Math.min(...sorted.map((m) => m.timestamp));
+
+  const lineFor = (m: Message) => {
+    const role = m.role === 'user' ? '학생' : '환자';
+    const time = formatRelativeSessionClock(m.timestamp, sessionStartMs);
+    return `[${time}] ${role}: ${m.content}`;
+  };
+
+  const fullLog = sorted.map(lineFor).join('\n');
 
   if (fullLog.length <= MAX_SCORING_LOG_CHARS) return fullLog;
 
   let keptChars = 0;
   const keptLines: string[] = [];
   let keptTurns = 0;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    const role = m.role === 'user' ? '학생' : '환자';
-    const time = formatTimestamp(m.timestamp);
-    const line = `[${time}] ${role}: ${m.content}`;
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const m = sorted[i];
+    const line = lineFor(m);
     const lineLen = line.length + 1;
     if (keptChars + lineLen > MAX_SCORING_LOG_CHARS) break;
     keptLines.unshift(line);
@@ -34,16 +52,9 @@ export function formatConversationLog(messages: Message[]): string {
     keptTurns += 1;
   }
 
-  const omittedTurns = Math.max(0, messages.length - keptTurns);
+  const omittedTurns = Math.max(0, sorted.length - keptTurns);
   const summary = `[요약] 세션이 길어 최근 ${keptTurns}턴만 채점 입력에 사용했습니다. 앞선 ${omittedTurns}턴은 길이 제한으로 생략되었습니다.`;
   return `${summary}\n${keptLines.join('\n')}`;
-}
-
-function formatTimestamp(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function toGrade(value01: number): 'A' | 'B' | 'C' | 'D' | 'F' {
@@ -147,13 +158,24 @@ export async function scoreSession(
     model: 'gpt-4o',
     messages: [{ role: 'user', content: prompt }],
     response_format: { type: 'json_object' },
-    max_tokens: 3000,
+    max_tokens: 16384,
     temperature: 0.3,
   });
 
   const content = response.choices[0]?.message?.content;
   if (!content) throw new Error('채점 실패');
-  const parsed = JSON.parse(content) as Partial<ScoreResult>;
+  let parsed: Partial<ScoreResult>;
+  try {
+    parsed = JSON.parse(content) as Partial<ScoreResult>;
+  } catch (e) {
+    const reason = response.choices[0]?.finish_reason;
+    console.error('Score JSON parse failed:', reason, e);
+    throw new Error(
+      reason === 'length'
+        ? '채점 응답이 잘렸습니다. 체크리스트가 매우 길면 재시도해 주세요.'
+        : '채점 응답 형식 오류입니다.'
+    );
+  }
   const finalEval = parsed.final_answer_evaluation || {
     presumptive_diagnosis: {
       expected: `1) ${answerKey.diagnosis_ranked[0]} / 2) ${answerKey.diagnosis_ranked[1]} / 3) ${answerKey.diagnosis_ranked[2]}`,

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { buildNoAttemptScore, scoreSession } from '@/lib/ai/scorer';
 import { CaseSpec, Message, ScoreResult } from '@/types';
 
+export const runtime = 'nodejs';
+/** 긴 세션 채점 시 OpenAI 응답 대기 — Vercel Pro 이상에서 최대 5분까지 허용 */
+export const maxDuration = 300;
+
 export async function POST(req: NextRequest) {
   try {
     const { conversationHistory, caseSpec } = await req.json() as {

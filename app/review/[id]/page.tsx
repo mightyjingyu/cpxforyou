@@ -68,22 +68,29 @@ export default function ReviewPage() {
   } = useSessionStore();
 
   const [scoring, setScoring] = useState(false);
+  const [scoringError, setScoringError] = useState<string | null>(null);
   const [autoArchived, setAutoArchived] = useState(false);
   const [activeTab, setActiveTab] = useState<'checklist' | 'log'>('checklist');
 
   const fetchScore = useCallback(async () => {
     if (!caseSpec || scoreResult) return;
     setScoring(true);
+    setScoringError(null);
     try {
       const res = await fetch('/api/score', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationHistory, caseSpec }),
       });
-      const data: ScoreResult = await res.json();
+      const data = (await res.json()) as ScoreResult & { error?: string };
+      if (!res.ok || data.error) {
+        setScoringError(data.error || '채점 요청이 실패했습니다. 아래에서 다시 시도해 주세요.');
+        return;
+      }
       setScoreResult(data);
     } catch (err) {
       console.error('Scoring failed:', err);
+      setScoringError('네트워크 오류로 채점을 완료하지 못했습니다.');
     } finally {
       setScoring(false);
     }
@@ -209,6 +216,19 @@ export default function ReviewPage() {
           <div className="flex items-center justify-center gap-3 py-8">
             <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
             <p className="text-sm text-neutral-500">AI가 채점하고 있습니다...</p>
+          </div>
+        )}
+
+        {scoringError && !scoring && !safeScoreResult && (
+          <div className="rounded-2xl border border-red-100 bg-red-50/40 p-5 space-y-3">
+            <p className="text-sm text-red-700">{scoringError}</p>
+            <button
+              type="button"
+              onClick={() => void fetchScore()}
+              className="text-sm font-bold text-black underline underline-offset-2"
+            >
+              다시 채점하기
+            </button>
           </div>
         )}
 
