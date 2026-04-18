@@ -83,7 +83,8 @@ interface SessionState {
   archiveCurrentSession: () => void;
   flushCloudSessionSyncQueue: () => Promise<void>;
   loadUserDataFromCloud: (uid: string) => Promise<void>;
-  syncUserSettingsToCloud: () => Promise<void>;
+  /** includeDraftMemo: 메모 패널에서 온 동기화만 true — false일 때 draftMemoContent 필드를 보내지 않아 빈 상태로 기존 클라우드 메모를 덮어쓰지 않음 */
+  syncUserSettingsToCloud: (opts?: { includeDraftMemo?: boolean }) => Promise<void>;
   saveMemoTemplate: (payload: {
     name: string;
     content: string;
@@ -477,18 +478,25 @@ export const useSessionStore = create<SessionState>()(
         }
       },
 
-      syncUserSettingsToCloud: async () => {
+      syncUserSettingsToCloud: async (opts?: { includeDraftMemo?: boolean }) => {
         try {
           const auth = getFirebaseAuth();
           const user = auth.currentUser;
           if (!user) return;
           const s = get();
-          await saveUserSettings(user.uid, {
+          const base = {
             examTimeDeductionSeconds: s.examTimeDeductionSeconds,
             memoTemplates: s.memoTemplates,
-            draftMemoContent: s.memoContent,
-          });
-          writeMemoLocalBackup(user.uid, s.memoContent);
+          };
+          if (opts?.includeDraftMemo) {
+            await saveUserSettings(user.uid, {
+              ...base,
+              draftMemoContent: s.memoContent,
+            });
+            writeMemoLocalBackup(user.uid, s.memoContent);
+          } else {
+            await saveUserSettings(user.uid, base);
+          }
         } catch (e) {
           console.error('syncUserSettingsToCloud failed:', e);
         }
@@ -627,9 +635,9 @@ let draftMemoSyncTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleDraftMemoSync() {
   if (typeof window === 'undefined') return;
   if (draftMemoSyncTimer) clearTimeout(draftMemoSyncTimer);
-  draftMemoSyncTimer = setTimeout(() => {
+    draftMemoSyncTimer = setTimeout(() => {
     draftMemoSyncTimer = null;
-    void useSessionStore.getState().syncUserSettingsToCloud();
+    void useSessionStore.getState().syncUserSettingsToCloud({ includeDraftMemo: true });
   }, 400);
 }
 
@@ -640,7 +648,7 @@ export async function flushDraftMemoToCloud(): Promise<void> {
     clearTimeout(draftMemoSyncTimer);
     draftMemoSyncTimer = null;
   }
-  await useSessionStore.getState().syncUserSettingsToCloud();
+  await useSessionStore.getState().syncUserSettingsToCloud({ includeDraftMemo: true });
 }
 
 /**
