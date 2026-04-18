@@ -251,9 +251,9 @@ export default function SessionMessagePage() {
       </header>
 
       <div className="flex-1 flex overflow-hidden min-h-0 relative z-10 w-full max-w-[1500px] mx-auto border-x border-black bg-transparent">
-        <div className="w-1/2 flex flex-col p-6 border-r border-black relative min-h-0">
+        <div className="w-1/2 flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-6 border-r border-black relative">
           <div className="absolute inset-0 bg-white/30 backdrop-blur-sm -z-10" />
-          <div className="rounded-2xl border border-black bg-white/80 p-4 mb-4">
+          <div className="rounded-2xl border border-black bg-white/80 p-4 mb-4 shrink-0">
             <p className="text-[10px] font-black tracking-widest uppercase text-black/50 mb-2">Patient / Vitals</p>
             <p className="text-sm font-black">
               {caseSpec.patient.name} ({caseSpec.patient.age}세 / {caseSpec.patient.gender})
@@ -266,7 +266,7 @@ export default function SessionMessagePage() {
             </div>
           </div>
 
-          <div className="flex items-start justify-center">
+          <div className="flex max-h-[min(34vh,280px)] shrink-0 items-start justify-center overflow-hidden">
             <PatientVisual
               caseSpec={caseSpec}
               voiceState={processing ? 'thinking' : 'idle'}
@@ -274,7 +274,7 @@ export default function SessionMessagePage() {
             />
           </div>
 
-          <div className="mt-2 flex flex-col gap-2">
+          <div className="mt-2 flex shrink-0 flex-col gap-2">
             <div className="flex items-center justify-center gap-2">
               <button
                 onClick={handleHistoryComplete}
@@ -318,7 +318,7 @@ export default function SessionMessagePage() {
             </div>
           </div>
 
-          <div className="mt-4 flex-1 min-h-0 rounded-3xl border border-black bg-white/60 backdrop-blur-xl overflow-hidden glass shadow-sm relative">
+          <div className="mt-4 flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-3xl border border-black bg-white/60 backdrop-blur-xl glass shadow-sm relative">
             <MemoPanel />
           </div>
         </div>

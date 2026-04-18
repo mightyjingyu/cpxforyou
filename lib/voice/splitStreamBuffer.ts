@@ -1,9 +1,9 @@
 /** 스트리밍 텍스트에서 문장 경계로 잘라 TTS 단위 조각을 만든다.
- *  - 문장 끝(. ! ? …): 4자 이상이면 즉시 분리 (첫 조각은 너무 짧지 않게)
- *  - 쉼표/줄바꿈: 12자 이상 누적됐을 때 분리 (불필요한 쪼개기 감소)
- *  - 경계 없이 MAX_SPECULATIVE자 초과 시 강제 분리 (무한 버퍼 방지)
+ *  - 문장 끝(. ! ? … 한글 마침표 등): 최소 길이 이상이면 분리
+ *  - 쉼표/줄바꿈: 더 길게 누적된 뒤에만 분리 (한국어 중간 끊김 감소)
+ *  - VoiceEngine의 SPECULATIVE_FLUSH와 함께 쓰인다.
  */
-const MIN_COMMA_LEN = 12;
+const MIN_COMMA_LEN = 14;
 const MIN_SENTENCE_LEN = 4;
 
 function isSentenceEnd(c: string): boolean {

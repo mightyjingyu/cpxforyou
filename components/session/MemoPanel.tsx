@@ -38,7 +38,7 @@ export default function MemoPanel() {
   }, []);
 
   return (
-    <div className="relative flex flex-col h-full p-6">
+    <div className="relative flex min-h-0 flex-1 flex-col p-6">
       <div className="flex items-center justify-between gap-3 mb-4 pb-4 border-b border-black">
         <div className="flex items-center gap-3">
         <span className="text-xs font-black text-black uppercase tracking-widest">Memo</span>
@@ -56,7 +56,7 @@ export default function MemoPanel() {
         onChange={(e) => setMemo(e.target.value)}
         onKeyDown={handleMemoKeyDown}
         placeholder="증상, 감별진단, 신체진찰 항목, 메모 등 자유롭게 입력..."
-        className="flex-1 w-full resize-none bg-transparent text-sm text-black placeholder:text-black/30 outline-none transition-colors leading-loose font-mono selection:bg-black selection:text-white"
+        className="min-h-[160px] flex-1 w-full resize-y bg-transparent text-sm text-black placeholder:text-black/30 outline-none transition-colors leading-loose font-mono selection:bg-black selection:text-white"
         spellCheck={false}
         autoCorrect="off"
         autoCapitalize="off"

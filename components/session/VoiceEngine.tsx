@@ -19,7 +19,8 @@ interface Props {
 }
 
 const MIN_BYTES = 700;
-const SPECULATIVE_FLUSH_CHARS = 35;
+/** 문장 부호 없이 길게 이어질 때만 중간 flush. 너무 크면 첫 음성이 늦어지므로 낮게 유지한다. */
+const SPECULATIVE_FLUSH_CHARS = 36;
 const SILENCE_RMS_THRESHOLD = 0.02;
 const SILENCE_HOLD_MS = 520;
 const MIN_REALTIME_RECORD_MS = 650;
