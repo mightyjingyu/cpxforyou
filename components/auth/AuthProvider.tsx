@@ -17,7 +17,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const flushSessionIndexSyncQueue = useSessionStore((s) => s.flushSessionIndexSyncQueue);
+  const flushCloudSessionSyncQueue = useSessionStore((s) => s.flushCloudSessionSyncQueue);
 
   useEffect(() => {
     const unsub = subscribeAuthState((nextUser) => {
@@ -29,8 +29,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!user) return;
-    void flushSessionIndexSyncQueue();
-  }, [user, flushSessionIndexSyncQueue]);
+    void flushCloudSessionSyncQueue();
+  }, [user, flushCloudSessionSyncQueue]);
 
   useEffect(() => {
     if (authLoading) return;

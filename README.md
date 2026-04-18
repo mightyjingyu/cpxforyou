@@ -192,9 +192,9 @@ buildSystemPrompt(
 }
 ```
 
-## Firebase (Google 로그인 + 로컬우선 저장)
+## Firebase (Google 로그인 + Firestore 동기화)
 
-이 프로젝트는 아카이브 원문(대화/메모/리포트)은 로컬에 저장하고, Firebase에는 사용자별 최소 메타데이터만 저장합니다.
+로그인한 사용자의 **세션 전체**(대화·메모·채점 결과 등 `SessionData`)와 **설정**(메모 템플릿, 신체진찰 차감 시간)은 **Cloud Firestore**에 저장합니다. 비로그인(guest)은 기기 **localStorage** 캐시에만 유지됩니다.
 
 ### 환경변수 (.env.local)
 
@@ -211,13 +211,12 @@ NEXT_PUBLIC_FIREBASE_APP_ID=...
 
 ### Firestore 저장 구조
 
-- 컬렉션 경로: `users/{uid}/sessionIndex/{sessionId}`
-- 저장 필드(메타 only):
-  - `sessionId`, `userId`, `createdAt`, `updatedAt`
-  - `clinicalPresentation`, `grade`, `elapsedSeconds`, `localVersion`
-  - `hasScore`, `hasMemo`, `deviceId`, `lastSyncedAt`
+- **세션 전체**: `users/{uid}/sessions/{sessionId}`
+  - `SessionData` 필드 + `updatedAt` (문서당 약 1MB 제한)
+- **앱 설정**: `users/{uid}/settings/app`
+  - `examTimeDeductionSeconds`, `memoTemplates`, `updatedAt`
 
-원문 텍스트(`memoContent`, `conversationHistory`, `summary_feedback` 등)는 Firestore에 저장하지 않습니다.
+(레거시 `sessionIndex` 메타 전용 경로는 더 이상 쓰지 않을 수 있습니다.)
 
 ### Firestore Rules 예시
 
@@ -225,7 +224,10 @@ NEXT_PUBLIC_FIREBASE_APP_ID=...
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId}/sessionIndex/{sessionId} {
+    match /users/{userId}/sessions/{sessionId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /users/{userId}/settings/{docId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
   }

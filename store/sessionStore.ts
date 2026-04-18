@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { SessionIndexRetryItem } from '@/types/firebase';
+import { CloudSessionRetryItem } from '@/types/firebase';
 import {
   CaseSpec,
   Message,
@@ -10,7 +10,8 @@ import {
   TimerMode,
 } from '@/types';
 import { getFirebaseAuth } from '@/lib/firebase/client';
-import { buildSessionIndexDoc, upsertSessionIndex } from '@/lib/firebase/sessionIndex';
+import { saveUserSession, listUserSessions } from '@/lib/firebase/userSessions';
+import { loadUserSettings, saveUserSettings } from '@/lib/firebase/userSettingsDoc';
 
 const DEFAULT_COUNTDOWN_SECONDS = 720;
 
@@ -52,7 +53,7 @@ interface SessionState {
     clinicalPresentation?: string;
     updatedAt: number;
   }>;
-  sessionIndexSyncQueue: SessionIndexRetryItem[];
+  cloudSessionSyncQueue: CloudSessionRetryItem[];
 
   startSession: (
     caseSpec: CaseSpec,
@@ -77,7 +78,9 @@ interface SessionState {
   setSessionStatus: (status: 'idle' | 'loading' | 'active' | 'ended') => void;
   setScoreResult: (result: ScoreResult) => void;
   archiveCurrentSession: () => void;
-  flushSessionIndexSyncQueue: () => Promise<void>;
+  flushCloudSessionSyncQueue: () => Promise<void>;
+  loadUserDataFromCloud: (uid: string) => Promise<void>;
+  syncUserSettingsToCloud: () => Promise<void>;
   saveMemoTemplate: (payload: {
     name: string;
     content: string;
@@ -89,14 +92,15 @@ interface SessionState {
   ) => void;
   applyMemoTemplate: (templateId: string) => void;
   reset: () => void;
-  /** 로그인 uid(또는 guest) 전환 시: 메모리에 남은 타 계정 데이터 제거 후 persist 재로드 */
-  onAccountScopeChange: () => void;
+  /** 로그인 uid 전환 시 활성 세션 필드만 비움(아카이브는 loadUserDataFromCloud에서 채움) */
+  clearVolatileForAccountSwitch: () => void;
 }
 
 const DEFAULT_EXAM_DEDUCTION_SECONDS = 240;
 const MIN_EXAM_DEDUCTION_SECONDS = 30;
 const MAX_EXAM_DEDUCTION_SECONDS = 600;
-const BASE_PERSIST_KEY = 'cpx-session-storage';
+/** v2: Firestore 전체 동기화 도입 — 이전 로컬 키와 분리 */
+const BASE_PERSIST_KEY = 'cpx-session-storage-v2';
 
 /** AuthProvider에서 동일 uid로 syncSessionWithAuthScope가 반복 호출되지 않게 함 */
 let lastSyncedAuthScope: string | null | undefined = undefined;
@@ -159,7 +163,7 @@ export const useSessionStore = create<SessionState>()(
       examTimeDeductionSeconds: DEFAULT_EXAM_DEDUCTION_SECONDS,
       archivedSessions: [],
       memoTemplates: [],
-      sessionIndexSyncQueue: [],
+      cloudSessionSyncQueue: [],
 
       startSession: (caseSpec, sessionId, difficulty, timerMode = 'countdown') =>
         set({
@@ -340,13 +344,15 @@ export const useSessionStore = create<SessionState>()(
           return { sessionPhase: 'completed', isTimerRunning: false };
         }),
 
-      setExamTimeDeductionSeconds: (seconds) =>
+      setExamTimeDeductionSeconds: (seconds) => {
         set({
           examTimeDeductionSeconds: Math.min(
             MAX_EXAM_DEDUCTION_SECONDS,
             Math.max(MIN_EXAM_DEDUCTION_SECONDS, seconds)
           ),
-        }),
+        });
+        void get().syncUserSettingsToCloud();
+      },
 
       setSessionStatus: (status) => set({ sessionStatus: status }),
 
@@ -377,57 +383,85 @@ export const useSessionStore = create<SessionState>()(
           ].slice(0, 50),
         }));
 
-        // 로컬 저장은 항상 성공시키고, Firebase 메타 업로드는 분리해 실패 시 큐에 적재한다.
-        const runMetaSync = async () => {
+        const runCloudSync = async () => {
           try {
             const auth = getFirebaseAuth();
             const user = auth.currentUser;
             if (!user) return;
-            const payload = buildSessionIndexDoc(sessionData, user.uid);
-            await upsertSessionIndex(user.uid, payload);
+            await saveUserSession(user.uid, sessionData);
           } catch (error) {
-            console.error('Failed to sync session index:', error);
+            console.error('Failed to save session to Firestore:', error);
             try {
               const auth = getFirebaseAuth();
               const user = auth.currentUser;
               if (!user) return;
-              const payload = buildSessionIndexDoc(sessionData, user.uid);
               set((s) => ({
-                sessionIndexSyncQueue: [
-                  ...s.sessionIndexSyncQueue.filter((q) => q.sessionId !== sessionData.id),
+                cloudSessionSyncQueue: [
+                  ...s.cloudSessionSyncQueue.filter((q) => q.sessionId !== sessionData.id),
                   {
                     sessionId: sessionData.id,
                     userId: user.uid,
                     enqueuedAt: Date.now(),
-                    payload,
+                    session: sessionData,
                   },
                 ].slice(-100),
               }));
             } catch {
-              // Firebase 설정 미완료 상태에서도 로컬 아카이브를 유지한다.
+              // Firebase 미설정 시 로컬 아카이브만 유지
             }
           }
         };
-        void runMetaSync();
+        void runCloudSync();
       },
 
-      flushSessionIndexSyncQueue: async () => {
-        const queue = get().sessionIndexSyncQueue;
+      flushCloudSessionSyncQueue: async () => {
+        const queue = get().cloudSessionSyncQueue;
         if (queue.length === 0) return;
         for (const item of queue) {
           try {
-            await upsertSessionIndex(item.userId, item.payload);
+            await saveUserSession(item.userId, item.session);
             set((s) => ({
-              sessionIndexSyncQueue: s.sessionIndexSyncQueue.filter((q) => q.sessionId !== item.sessionId),
+              cloudSessionSyncQueue: s.cloudSessionSyncQueue.filter((q) => q.sessionId !== item.sessionId),
             }));
           } catch (e) {
-            console.error('Failed to flush session index queue item:', e);
+            console.error('Failed to flush cloud session queue item:', e);
             break;
           }
         }
       },
 
-      saveMemoTemplate: ({ name, content, clinicalPresentation }) =>
+      loadUserDataFromCloud: async (uid: string) => {
+        try {
+          const [sessions, settings] = await Promise.all([listUserSessions(uid), loadUserSettings(uid)]);
+          set({
+            archivedSessions: sessions,
+            memoTemplates: settings.memoTemplates.slice(0, 100),
+            examTimeDeductionSeconds: Math.min(
+              MAX_EXAM_DEDUCTION_SECONDS,
+              Math.max(MIN_EXAM_DEDUCTION_SECONDS, settings.examTimeDeductionSeconds)
+            ),
+          });
+        } catch (e) {
+          console.error('loadUserDataFromCloud failed:', e);
+        }
+      },
+
+      syncUserSettingsToCloud: async () => {
+        try {
+          const auth = getFirebaseAuth();
+          const user = auth.currentUser;
+          if (!user) return;
+          const s = get();
+          await saveUserSettings(user.uid, {
+            examTimeDeductionSeconds: s.examTimeDeductionSeconds,
+            memoTemplates: s.memoTemplates,
+          });
+        } catch (e) {
+          console.error('syncUserSettingsToCloud failed:', e);
+        }
+      },
+
+      saveMemoTemplate: ({ name, content, clinicalPresentation }) => {
         set((state) => {
           const trimmedName = name.trim();
           const trimmedContent = content.trim();
@@ -447,9 +481,11 @@ export const useSessionStore = create<SessionState>()(
           return {
             memoTemplates: [nextTemplate, ...state.memoTemplates].slice(0, 100),
           };
-        }),
+        });
+        void get().syncUserSettingsToCloud();
+      },
 
-      updateMemoTemplate: (templateId, { name, content, clinicalPresentation }) =>
+      updateMemoTemplate: (templateId, { name, content, clinicalPresentation }) => {
         set((state) => {
           const trimmedName = name.trim();
           const trimmedContent = content.trim();
@@ -471,7 +507,9 @@ export const useSessionStore = create<SessionState>()(
                 : tpl
             ),
           };
-        }),
+        });
+        void get().syncUserSettingsToCloud();
+      },
 
       applyMemoTemplate: (templateId) =>
         set((state) => {
@@ -506,7 +544,7 @@ export const useSessionStore = create<SessionState>()(
           educationElapsed: 0,
         }),
 
-      onAccountScopeChange: () =>
+      clearVolatileForAccountSwitch: () =>
         set({
           caseSpec: null,
           timerMode: 'countdown',
@@ -530,10 +568,6 @@ export const useSessionStore = create<SessionState>()(
           historyTakingElapsed: 0,
           physicalExamElapsed: 0,
           educationElapsed: 0,
-          examTimeDeductionSeconds: DEFAULT_EXAM_DEDUCTION_SECONDS,
-          archivedSessions: [],
-          memoTemplates: [],
-          sessionIndexSyncQueue: [],
         }),
     }),
     {
@@ -543,7 +577,7 @@ export const useSessionStore = create<SessionState>()(
         archivedSessions: state.archivedSessions,
         examTimeDeductionSeconds: state.examTimeDeductionSeconds,
         memoTemplates: state.memoTemplates,
-        sessionIndexSyncQueue: state.sessionIndexSyncQueue,
+        cloudSessionSyncQueue: state.cloudSessionSyncQueue,
       }),
     }
   )
@@ -551,13 +585,17 @@ export const useSessionStore = create<SessionState>()(
 
 /**
  * Firebase uid(또는 비로그인 guest)가 바뀔 때만 호출.
- * persist에 없는 필드(대화, 메모, 채점 등)가 메모리에 남아 타 계정과 섞이는 것을 막는다.
+ * 로그인: Firestore에서 아카이브·설정 로드. 비로그인: 로컬 persist만 재적용.
+ * (아카이브를 비운 뒤 덮어쓰지 않아 로그인 시 데이터 유실 방지)
  */
-export function syncSessionWithAuthScope(uid: string | null) {
+export async function syncSessionWithAuthScope(uid: string | null) {
   if (typeof window === 'undefined') return;
   const scope = uid ?? 'guest';
   if (lastSyncedAuthScope === scope) return;
   lastSyncedAuthScope = scope;
-  useSessionStore.getState().onAccountScopeChange();
-  void useSessionStore.persist.rehydrate();
+  useSessionStore.getState().clearVolatileForAccountSwitch();
+  await useSessionStore.persist.rehydrate();
+  if (uid) {
+    await useSessionStore.getState().loadUserDataFromCloud(uid);
+  }
 }
