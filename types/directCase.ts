@@ -2,7 +2,7 @@ import type { CaseSpec, Difficulty } from '@/types';
 
 /** 직접 모드: 어떤 블록을 사용자가 직접 쓸지 */
 export type DirectCaseScope = {
-  /** 병력청취 표 (OLD~ 등) */
+  /** 병력청취 표 (OLD COEX·HPI·배경) */
   history: boolean;
   /** 활력 + 신체진찰 소견 */
   physical: boolean;
@@ -26,7 +26,7 @@ export interface DirectCaseFormPayload {
   scope: DirectCaseScope;
   /**
    * 병력 라벨별 자유 서술. 키는 UI 고정 순서이며, 의미는 `lib/ai/historyBlockSemantics.ts`의
-   * OLDCAF·과약가사여 태그와 1:1 대응한다(단순 문자열이 아님).
+   * OLD COEX·Character/Associated/Factor/Exam·약·사·가·외·과·여 정의와 1:1 대응한다.
    */
   historyBlocks: Record<string, string>;
   /** scope.physical 일 때 — 비우면 AI가 채움 */

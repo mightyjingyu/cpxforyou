@@ -91,7 +91,7 @@ export async function completeDirectCase(payload: DirectCaseFormPayload): Promis
   const prompt = `당신은 의과대학 CPX 케이스 설계자입니다. 사용자가 "직접 모드" 표로 일부만 채운 뒤, 나머지는 당신이 임상적으로 일관되게 보강해 완전한 CaseSpec JSON을 만듭니다.
 
 ## 절대 규칙
-1) scope.history === true 인 경우: historyBlocks에 적힌 내용은 **절대 변경하지 말고** 아래 **의미 태그·mergeHint**에 따라 symptom_details·history에 녹여 넣으세요. 라벨은 문진 순서가 아니라 **OLDCAF·과약가사여 등 임상 범주**입니다. 환자는 의사가 다른 순서로 물어도 같은 사실을 유지합니다.
+1) scope.history === true 인 경우: historyBlocks에 적힌 내용은 **절대 변경하지 말고** 아래 **의미 태그·mergeHint**에 따라 symptom_details·history에 녹여 넣으세요. 라벨은 **OLD COEX(1~5)·Character/Associated/Factor/Exam(6~9)·배경 병력(10~15)**에 대응합니다. 환자는 의사가 다른 순서로 물어도 같은 사실을 유지합니다.
 
 ${formatHistoryBlockSemanticsForPrompt()}
 2) scope.history === false 인 경우: 병력·symptom_details·history 전체를 chief_complaint·나이·성별과 맞게 생성하세요.

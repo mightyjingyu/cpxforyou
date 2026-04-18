@@ -323,9 +323,9 @@ export default function DirectModePage() {
 
           {scope.history && (
             <section className="rounded-2xl border border-black p-5 space-y-3 bg-white/50">
-              <h2 className="text-xs font-black uppercase tracking-widest">병력청취 (OLD 등)</h2>
+              <h2 className="text-xs font-black uppercase tracking-widest">병력청취 (OLD COEX 등)</h2>
               <p className="text-xs text-black/50">
-                라벨은 문진 순서가 아니라 상황 메모입니다. 빈 칸은 AI가 맥락에 맞게 보강할 수 있습니다.
+                O~Ex는 OLD COEX, C~E는 Character·동반·요인·이전 검진, 이하 약·사·가·외·과·여는 배경 병력입니다. 문진 순서와 무관한 상황 메모이며, 빈 칸은 AI가 맥락에 맞게 보강할 수 있습니다.
               </p>
               <div className="grid gap-3">
                 {HISTORY_KEYS.map((key) => {
