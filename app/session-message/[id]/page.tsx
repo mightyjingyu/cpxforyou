@@ -35,10 +35,8 @@ export default function SessionMessagePage() {
   const [showPhysicalExamGuide, setShowPhysicalExamGuide] = useState(false);
   const [inputText, setInputText] = useState('');
   const [processing, setProcessing] = useState(false);
-  const [examResultTexts, setExamResultTexts] = useState<string[]>([]);
   const [streamingReply, setStreamingReply] = useState('');
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
-  const examResultScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -55,12 +53,6 @@ export default function SessionMessagePage() {
     if (!node) return;
     node.scrollTop = node.scrollHeight;
   }, [conversationHistory, streamingReply, processing]);
-
-  useEffect(() => {
-    const node = examResultScrollRef.current;
-    if (!node) return;
-    node.scrollTop = node.scrollHeight;
-  }, [examResultTexts]);
 
   const handleTimeUp = useCallback(() => {
     endSession();
@@ -80,7 +72,6 @@ export default function SessionMessagePage() {
       const examData = (await examRes.json()) as { findingText?: string };
       const findingText = examData.findingText?.trim() || caseSpec.physical_exam_findings;
       const findings = `[진찰소견] ${findingText}`;
-      setExamResultTexts((prev) => [...prev, findings]);
       addMessage({
         id: uuidv4(),
         role: 'patient',
@@ -370,19 +361,6 @@ export default function SessionMessagePage() {
               </button>
             </form>
           </div>
-
-          {sessionPhase === 'physical' && examResultTexts.length > 0 && (
-            <div className="rounded-2xl border border-black bg-black text-white p-4 shadow-lg">
-              <p className="text-xs font-bold uppercase tracking-widest text-white/50 mb-2">신체진찰 결과</p>
-              <div ref={examResultScrollRef} className="space-y-2 max-h-40 overflow-auto">
-                {examResultTexts.map((txt, idx) => (
-                  <p key={`${idx}-${txt.slice(0, 16)}`} className="text-sm font-medium leading-relaxed">
-                    {txt}
-                  </p>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
 

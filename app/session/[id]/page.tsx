@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState, useCallback, useEffect, useRef } from 'react';
+import { FormEvent, useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import { useSessionStore } from '@/store/sessionStore';
@@ -35,11 +35,9 @@ export default function SessionPage() {
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [realtimeMode, setRealtimeMode] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
-  const [examResultTexts, setExamResultTexts] = useState<string[]>([]);
   const [showPhysicalExamGuide, setShowPhysicalExamGuide] = useState(false);
   const [physicalExamInput, setPhysicalExamInput] = useState('');
   const [examSubmitting, setExamSubmitting] = useState(false);
-  const examResultScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -50,12 +48,6 @@ export default function SessionPage() {
       router.replace('/');
     }
   }, [authLoading, user, caseSpec, sessionStatus, router]);
-
-  useEffect(() => {
-    const node = examResultScrollRef.current;
-    if (!node) return;
-    node.scrollTop = node.scrollHeight;
-  }, [examResultTexts]);
 
   const handleTimeUp = useCallback(() => {
     endSession();
@@ -76,7 +68,6 @@ export default function SessionPage() {
       const examData = (await examRes.json()) as { findingText?: string; error?: string };
       const findingText = examData.findingText?.trim() || caseSpec.physical_exam_findings;
       const findings = `[진찰소견] ${findingText}`;
-      setExamResultTexts((prev) => [...prev, findings]);
       addMessage({
         id: uuidv4(),
         role: 'patient',
@@ -86,7 +77,6 @@ export default function SessionPage() {
     } catch (error) {
       console.error(error);
       const fallback = `[진찰소견] ${caseSpec.physical_exam_findings}`;
-      setExamResultTexts((prev) => [...prev, fallback]);
       addMessage({
         id: uuidv4(),
         role: 'patient',
@@ -310,28 +300,13 @@ export default function SessionPage() {
           </div>
         </div>
 
-        {/* 우측: 메모 + 진찰소견 */}
+        {/* 우측: 메모 */}
         <div className="w-1/2 flex flex-col p-6 gap-5 min-h-0 relative">
           <div className="absolute inset-0 bg-white/40 backdrop-blur-md -z-10" />
 
           <div className="flex-1 min-h-0 rounded-3xl border border-black bg-white/60 backdrop-blur-xl overflow-hidden glass shadow-sm relative">
             <div className="absolute inset-0 border border-white/60 pointer-events-none rounded-3xl" />
             <MemoPanel />
-          </div>
-
-          <div className="shrink-0 flex flex-col gap-4">
-            {sessionPhase === 'physical' && examResultTexts.length > 0 && (
-              <div className="rounded-2xl border border-black bg-black text-white p-5 shadow-lg animate-in slide-in-from-bottom-2">
-                <p className="text-xs font-bold uppercase tracking-widest text-white/50 mb-2">신체진찰 결과</p>
-                <div ref={examResultScrollRef} className="space-y-2 max-h-44 overflow-auto">
-                  {examResultTexts.map((txt, idx) => (
-                    <p key={`${idx}-${txt.slice(0, 16)}`} className="text-sm font-medium leading-relaxed">
-                      {txt}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
