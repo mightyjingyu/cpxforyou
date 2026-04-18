@@ -96,34 +96,38 @@ export default function SessionPage() {
     }
   }, [caseSpec, addMessage, physicalExamDone, sessionPhase]);
 
+  const submitPhysicalExamText = useCallback(async () => {
+    const text = physicalExamInput.trim();
+    if (!text || !timerStarted || examSubmitting || physicalExamDone || sessionPhase !== 'physical') return;
+    setExamSubmitting(true);
+    setPhysicalExamInput('');
+    addMessage({
+      id: uuidv4(),
+      role: 'user',
+      content: text,
+      timestamp: Date.now(),
+    });
+    try {
+      await handlePhysicalExamTranscript(text);
+    } finally {
+      setExamSubmitting(false);
+    }
+  }, [
+    physicalExamInput,
+    timerStarted,
+    examSubmitting,
+    physicalExamDone,
+    sessionPhase,
+    addMessage,
+    handlePhysicalExamTranscript,
+  ]);
+
   const handlePhysicalExamTextSubmit = useCallback(
-    async (e: FormEvent) => {
+    (e: FormEvent) => {
       e.preventDefault();
-      const text = physicalExamInput.trim();
-      if (!text || !timerStarted || examSubmitting || physicalExamDone || sessionPhase !== 'physical') return;
-      setExamSubmitting(true);
-      setPhysicalExamInput('');
-      addMessage({
-        id: uuidv4(),
-        role: 'user',
-        content: text,
-        timestamp: Date.now(),
-      });
-      try {
-        await handlePhysicalExamTranscript(text);
-      } finally {
-        setExamSubmitting(false);
-      }
+      void submitPhysicalExamText();
     },
-    [
-      physicalExamInput,
-      timerStarted,
-      examSubmitting,
-      physicalExamDone,
-      sessionPhase,
-      addMessage,
-      handlePhysicalExamTranscript,
-    ]
+    [submitPhysicalExamText]
   );
 
   const handleHistoryComplete = useCallback(() => {
@@ -190,7 +194,7 @@ export default function SessionPage() {
       {/* 메인 콘텐츠 */}
       <div className="flex-1 flex overflow-hidden min-h-0 relative z-10 w-full max-w-[1450px] mx-auto border-x border-black bg-transparent">
         {/* 좌측: 환자 영역 */}
-        <div className="w-1/2 flex flex-col p-6 border-r border-black relative">
+        <div className="w-1/2 flex min-h-0 flex-1 flex-col p-6 border-r border-black relative">
           <div className="absolute inset-0 bg-white/30 backdrop-blur-sm -z-10" />
 
           <div className="w-full flex items-start justify-start mb-3">
@@ -206,23 +210,75 @@ export default function SessionPage() {
             </div>
           </div>
 
-          <div className="w-full flex items-start justify-center py-1">
+          <div className="w-full flex items-start justify-center py-1 shrink-0">
             <PatientVisual caseSpec={caseSpec} voiceState={voiceState} timerStarted={timerStarted} />
           </div>
 
-          <div className="w-full mt-1 flex flex-col items-center gap-2">
+          <div className="w-full mt-1 flex flex-col items-center gap-2 shrink-0">
+            <div className="w-full flex flex-wrap items-center justify-center gap-2">
+              <button
+                onClick={handleHistoryComplete}
+                disabled={!timerStarted || sessionPhase !== 'history'}
+                className="px-3 py-2 rounded-full border border-black text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-black hover:text-white transition-colors"
+              >
+                병력청취 완료
+              </button>
+              <button
+                onClick={handlePhysicalComplete}
+                disabled={!timerStarted || sessionPhase !== 'physical' || physicalExamDone}
+                className="px-3 py-2 rounded-full border border-black text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-black hover:text-white transition-colors"
+              >
+                신체진찰 완료
+              </button>
+              <button
+                onClick={handleEducationComplete}
+                disabled={!timerStarted || sessionPhase !== 'education'}
+                className="px-3 py-2 rounded-full border border-black text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-black hover:text-white transition-colors"
+              >
+                환자교육 완료
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-2 text-xs font-bold">
+              <span className="text-black/60">신체진찰 완료 시 차감</span>
+              <span className="px-2 py-1 rounded-full border border-black font-mono">{Math.floor(examTimeDeductionSeconds / 60)}:{String(examTimeDeductionSeconds % 60).padStart(2, '0')}</span>
+              <button
+                type="button"
+                onClick={() => setExamTimeDeductionSeconds(examTimeDeductionSeconds + 30)}
+                className="w-7 h-7 rounded-full border border-black hover:bg-black hover:text-white transition-colors"
+                aria-label="차감 시간 증가"
+              >
+                ▲
+              </button>
+              <button
+                type="button"
+                onClick={() => setExamTimeDeductionSeconds(examTimeDeductionSeconds - 30)}
+                className="w-7 h-7 rounded-full border border-black hover:bg-black hover:text-white transition-colors"
+                aria-label="차감 시간 감소"
+              >
+                ▼
+              </button>
+            </div>
+          </div>
+
+          <div className="w-full mt-2 flex flex-col items-center gap-2 flex-1 min-h-0 overflow-y-auto">
             {sessionPhase === 'physical' && !physicalExamDone ? (
-              <div className="w-full max-w-md rounded-2xl border border-black bg-white/80 p-4 shadow-sm">
+              <div className="w-full max-w-md rounded-2xl border border-black bg-white/80 p-4 shadow-sm shrink-0">
                 <p className="text-[10px] font-black uppercase tracking-widest text-black/50 mb-2">
                   신체진찰 (텍스트)
                 </p>
                 <p className="text-xs text-black/60 mb-3 leading-relaxed">
-                  이 단계는 음성 대신 아래에 진찰·검사 요청을 입력하세요. 요청하신 항목에 대한 소견만 표시됩니다.
+                  이 단계는 음성 대신 아래에 진찰·검사 요청을 입력하세요. 요청하신 항목에 대한 소견만 표시됩니다. Enter로 전송, 줄바꿈은 Shift+Enter.
                 </p>
                 <form onSubmit={handlePhysicalExamTextSubmit} className="flex flex-col gap-2">
                   <textarea
                     value={physicalExamInput}
                     onChange={(e) => setPhysicalExamInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter' || e.shiftKey) return;
+                      e.preventDefault();
+                      void submitPhysicalExamText();
+                    }}
                     placeholder={
                       timerStarted
                         ? '예: 복부 진찰, 심장 청진…'
@@ -251,49 +307,6 @@ export default function SessionPage() {
                 onRealtimeModeChange={setRealtimeMode}
               />
             )}
-
-            <div className="w-full flex items-center justify-center gap-2">
-              <button
-                onClick={handleHistoryComplete}
-                disabled={!timerStarted || sessionPhase !== 'history'}
-                className="px-3 py-2 rounded-full border border-black text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-black hover:text-white transition-colors"
-              >
-                병력청취 완료
-              </button>
-              <button
-                onClick={handlePhysicalComplete}
-                disabled={!timerStarted || sessionPhase !== 'physical' || physicalExamDone}
-                className="px-3 py-2 rounded-full border border-black text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-black hover:text-white transition-colors"
-              >
-                신체진찰 완료
-              </button>
-              <button
-                onClick={handleEducationComplete}
-                disabled={!timerStarted || sessionPhase !== 'education'}
-                className="px-3 py-2 rounded-full border border-black text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-black hover:text-white transition-colors"
-              >
-                환자교육 완료
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs font-bold">
-              <span className="text-black/60">신체진찰 완료 시 차감</span>
-              <span className="px-2 py-1 rounded-full border border-black font-mono">{Math.floor(examTimeDeductionSeconds / 60)}:{String(examTimeDeductionSeconds % 60).padStart(2, '0')}</span>
-              <button
-                onClick={() => setExamTimeDeductionSeconds(examTimeDeductionSeconds + 30)}
-                className="w-7 h-7 rounded-full border border-black hover:bg-black hover:text-white transition-colors"
-                aria-label="차감 시간 증가"
-              >
-                ▲
-              </button>
-              <button
-                onClick={() => setExamTimeDeductionSeconds(examTimeDeductionSeconds - 30)}
-                className="w-7 h-7 rounded-full border border-black hover:bg-black hover:text-white transition-colors"
-                aria-label="차감 시간 감소"
-              >
-                ▼
-              </button>
-            </div>
           </div>
         </div>
 
