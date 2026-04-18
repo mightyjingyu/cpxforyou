@@ -1,7 +1,21 @@
 'use client';
 
 import { useSessionStore } from '@/store/sessionStore';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+
+/** 한국어 키보드·IME에서 단축키 조합 시 ₩ 등이 입력되는 것 방지 */
+function shouldSuppressMemoKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+  if (e.metaKey || e.ctrlKey || e.altKey) {
+    const k = e.key;
+    if (k === '₩' || k === '\\' || k === '`' || k === 'IntlRo') {
+      return true;
+    }
+  }
+  if (e.key === '₩') {
+    return true;
+  }
+  return false;
+}
 
 export default function MemoPanel() {
   const { memoContent, setMemo, memoTemplates, applyMemoTemplate, caseSpec } = useSessionStore();
@@ -16,6 +30,12 @@ export default function MemoPanel() {
       ),
     [memoTemplates, caseSpec?.clinical_presentation]
   );
+
+  const handleMemoKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (shouldSuppressMemoKey(e)) {
+      e.preventDefault();
+    }
+  }, []);
 
   return (
     <div className="relative flex flex-col h-full p-6">
@@ -34,9 +54,12 @@ export default function MemoPanel() {
       <textarea
         value={memoContent}
         onChange={(e) => setMemo(e.target.value)}
+        onKeyDown={handleMemoKeyDown}
         placeholder="증상, 감별진단, 신체진찰 항목, 메모 등 자유롭게 입력..."
         className="flex-1 w-full resize-none bg-transparent text-sm text-black placeholder:text-black/30 outline-none transition-colors leading-loose font-mono selection:bg-black selection:text-white"
         spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
       />
       {open && (
         <div className="absolute inset-0 z-20 bg-white/90 backdrop-blur-sm p-4 flex flex-col">

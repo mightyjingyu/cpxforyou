@@ -180,7 +180,6 @@ export const useSessionStore = create<SessionState>()(
           isTimerRunning: false,
           physicalExamDone: false,
           conversationHistory: [],
-          memoContent: '',
           sessionStatus: 'active',
           sessionStartTime: null,
           sessionClockStartedAt: null,
@@ -318,7 +317,10 @@ export const useSessionStore = create<SessionState>()(
         });
       },
 
-      setMemo: (content) => set({ memoContent: content }),
+      setMemo: (content) => {
+        set({ memoContent: content });
+        scheduleDraftMemoSync();
+      },
 
       markPhysicalExamDone: () =>
         set((state) => ({
@@ -444,14 +446,16 @@ export const useSessionStore = create<SessionState>()(
       loadUserDataFromCloud: async (uid: string) => {
         try {
           const [sessions, settings] = await Promise.all([listUserSessions(uid), loadUserSettings(uid)]);
-          set({
+          set((state) => ({
             archivedSessions: sessions,
             memoTemplates: settings.memoTemplates.slice(0, 100),
             examTimeDeductionSeconds: Math.min(
               MAX_EXAM_DEDUCTION_SECONDS,
               Math.max(MIN_EXAM_DEDUCTION_SECONDS, settings.examTimeDeductionSeconds)
             ),
-          });
+            memoContent:
+              settings.draftMemoContent !== undefined ? settings.draftMemoContent : state.memoContent,
+          }));
         } catch (e) {
           console.error('loadUserDataFromCloud failed:', e);
         }
@@ -466,6 +470,7 @@ export const useSessionStore = create<SessionState>()(
           await saveUserSettings(user.uid, {
             examTimeDeductionSeconds: s.examTimeDeductionSeconds,
             memoTemplates: s.memoTemplates,
+            draftMemoContent: s.memoContent,
           });
         } catch (e) {
           console.error('syncUserSettingsToCloud failed:', e);
@@ -522,12 +527,14 @@ export const useSessionStore = create<SessionState>()(
         void get().syncUserSettingsToCloud();
       },
 
-      applyMemoTemplate: (templateId) =>
+      applyMemoTemplate: (templateId) => {
         set((state) => {
           const picked = state.memoTemplates.find((t) => t.id === templateId);
           if (!picked) return state;
           return { memoContent: picked.content };
-        }),
+        });
+        scheduleDraftMemoSync();
+      },
 
       reset: () =>
         set({
@@ -590,11 +597,22 @@ export const useSessionStore = create<SessionState>()(
         archivedSessions: state.archivedSessions,
         examTimeDeductionSeconds: state.examTimeDeductionSeconds,
         memoTemplates: state.memoTemplates,
+        memoContent: state.memoContent,
         cloudSessionSyncQueue: state.cloudSessionSyncQueue,
       }),
     }
   )
 );
+
+let draftMemoSyncTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleDraftMemoSync() {
+  if (typeof window === 'undefined') return;
+  if (draftMemoSyncTimer) clearTimeout(draftMemoSyncTimer);
+  draftMemoSyncTimer = setTimeout(() => {
+    draftMemoSyncTimer = null;
+    void useSessionStore.getState().syncUserSettingsToCloud();
+  }, 650);
+}
 
 /**
  * Firebase uid(또는 비로그인 guest)가 바뀔 때만 호출.
