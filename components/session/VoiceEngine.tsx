@@ -5,6 +5,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { useSessionStore } from '@/store/sessionStore';
 import { Message } from '@/types';
 import { splitStreamBuffer } from '@/lib/voice/splitStreamBuffer';
+import { SESSION_MEMO_INPUT_ATTR } from '@/components/session/MemoPanel';
+
+function isSessionMemoTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(`[${SESSION_MEMO_INPUT_ATTR}]`) !== null;
+}
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 type ProcessingStage = 'idle' | 'stt' | 'llm' | 'tts';
@@ -540,7 +545,7 @@ export default function VoiceEngine({
   );
 
   useEffect(() => {
-    /** ₩ / ` / ~ 등: 메모·입력란에 포커스가 있어도 녹음 버튼과 동일하게 토글 (keydown에서 이미 입력 차단) */
+    /** ₩ / ` / ~ 등: 메모 패널 포커스 시에는 토글·차단하지 않음(메모 전용 처리). 그 외는 녹음 토글 */
     const isToggleKey = (ev: KeyboardEvent) =>
       ev.key === '\\' ||
       ev.key === '₩' ||
@@ -550,17 +555,20 @@ export default function VoiceEngine({
       ev.code === 'IntlRo' ||
       ev.code === 'Backquote';
     const keydownBlocker = (ev: KeyboardEvent) => {
+      if (isSessionMemoTarget(ev.target)) return;
       if (!active || !isToggleKey(ev)) return;
       ev.preventDefault();
       ev.stopPropagation();
     };
     const keypressBlocker = (ev: KeyboardEvent) => {
+      if (isSessionMemoTarget(ev.target)) return;
       if (!active || !isToggleKey(ev)) return;
       // 일부 브라우저에서 keypress 단계에 문자가 입력되는 문제를 함께 차단한다.
       ev.preventDefault();
       ev.stopPropagation();
     };
     const keyupToggle = async (ev: KeyboardEvent) => {
+      if (isSessionMemoTarget(ev.target)) return;
       if (!active || !isToggleKey(ev)) return;
       ev.preventDefault();
       ev.stopPropagation();

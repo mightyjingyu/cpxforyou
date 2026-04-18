@@ -3,18 +3,31 @@
 import { useSessionStore } from '@/store/sessionStore';
 import { useCallback, useMemo, useState } from 'react';
 
-/** 한국어 키보드·IME에서 단축키 조합 시 ₩ 등이 입력되는 것 방지 */
+export const SESSION_MEMO_INPUT_ATTR = 'data-session-memo-input';
+
+/** 한국어 키보드에서 ₩ · ` · ~ 등이 백틱/원화 키로 삽입되는 것 차단 */
 function shouldSuppressMemoKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+  const code = e.code;
+  if (code === 'Backquote' || code === 'IntlRo' || code === 'Backslash') {
+    return true;
+  }
+  const k = e.key;
+  if (k === '₩' || k === '`' || k === '~' || k === '\\' || k === 'IntlRo') {
+    return true;
+  }
   if (e.metaKey || e.ctrlKey || e.altKey) {
-    const k = e.key;
-    if (k === '₩' || k === '\\' || k === '`' || k === 'IntlRo') {
+    if (k === '₩' || k === '\\' || k === '`' || k === '~') {
       return true;
     }
   }
-  if (e.key === '₩') {
-    return true;
-  }
   return false;
+}
+
+const ROGUE_MEMO_CHARS_GLOBAL = /[₩`~]/g;
+const ROGUE_MEMO_ANY = /[₩`~]/;
+
+function stripRogueMemoChars(s: string) {
+  return s.replace(ROGUE_MEMO_CHARS_GLOBAL, '');
 }
 
 export default function MemoPanel() {
@@ -34,11 +47,37 @@ export default function MemoPanel() {
   const handleMemoKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (shouldSuppressMemoKey(e)) {
       e.preventDefault();
+      e.stopPropagation();
     }
   }, []);
 
+  const handleMemoBeforeInput = useCallback((e: React.FormEvent<HTMLTextAreaElement>) => {
+    const ne = e.nativeEvent as InputEvent;
+    if (ne.inputType !== 'insertText' || !ne.data) return;
+    if (ROGUE_MEMO_ANY.test(ne.data)) {
+      e.preventDefault();
+    }
+  }, []);
+
+  const handleMemoPaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const t = e.clipboardData.getData('text');
+    if (!t || !ROGUE_MEMO_ANY.test(t)) return;
+    e.preventDefault();
+    const cleaned = stripRogueMemoChars(t);
+    const el = e.currentTarget;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    const v = el.value;
+    const next = v.slice(0, start) + cleaned + v.slice(end);
+    setMemo(stripRogueMemoChars(next));
+    requestAnimationFrame(() => {
+      const pos = start + cleaned.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }, [setMemo]);
+
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col p-6">
+    <div className="relative flex h-full min-h-0 flex-1 flex-col p-6">
       <div className="flex items-center justify-between gap-3 mb-4 pb-4 border-b border-black">
         <div className="flex items-center gap-3">
         <span className="text-xs font-black text-black uppercase tracking-widest">Memo</span>
@@ -52,11 +91,14 @@ export default function MemoPanel() {
         </button>
       </div>
       <textarea
+        {...{ [SESSION_MEMO_INPUT_ATTR]: '' }}
         value={memoContent}
-        onChange={(e) => setMemo(e.target.value)}
+        onChange={(e) => setMemo(stripRogueMemoChars(e.target.value))}
         onKeyDown={handleMemoKeyDown}
+        onBeforeInput={handleMemoBeforeInput}
+        onPaste={handleMemoPaste}
         placeholder="증상, 감별진단, 신체진찰 항목, 메모 등 자유롭게 입력..."
-        className="min-h-[160px] flex-1 w-full resize-y bg-transparent text-sm text-black placeholder:text-black/30 outline-none transition-colors leading-loose font-mono selection:bg-black selection:text-white"
+        className="min-h-0 flex-1 w-full min-w-0 resize-y bg-transparent text-sm text-black placeholder:text-black/30 outline-none transition-colors leading-loose font-mono selection:bg-black selection:text-white"
         spellCheck={false}
         autoCorrect="off"
         autoCapitalize="off"
