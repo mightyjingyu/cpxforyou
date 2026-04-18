@@ -36,6 +36,8 @@ export default function DirectModePage() {
   const [title, setTitle] = useState('');
   const [systemCategory, setSystemCategory] = useState(Object.keys(CLINICAL_CATEGORIES)[0] || '');
   const [chiefComplaint, setChiefComplaint] = useState(CLINICAL_PRESENTATIONS[0] || '');
+  /** 비어 있으면 위 드롭다운 값 사용 */
+  const [chiefComplaintCustom, setChiefComplaintCustom] = useState('');
   const [patientName, setPatientName] = useState('');
   const [patientAge, setPatientAge] = useState('32');
   const [patientGender, setPatientGender] = useState<'남' | '여'>('남');
@@ -63,15 +65,17 @@ export default function DirectModePage() {
     setHistoryBlocks((prev) => ({ ...prev, [key]: value }));
   }, []);
 
+  const resolvedChiefComplaint = chiefComplaintCustom.trim() || chiefComplaint;
+
   const buildPayload = useCallback((): DirectCaseFormPayload => {
     const age = Math.max(1, Math.min(120, parseInt(patientAge, 10) || 30));
     const payload: DirectCaseFormPayload = {
       systemCategory,
-      chiefComplaint,
+      chiefComplaint: resolvedChiefComplaint,
       patientName: patientName.trim() || '환자',
       patientAge: age,
       patientGender,
-      chiefComplaintText: chiefComplaintText.trim() || chiefComplaint,
+      chiefComplaintText: chiefComplaintText.trim() || resolvedChiefComplaint,
       scope,
       historyBlocks: scope.history ? { ...historyBlocks } : {},
       difficulty,
@@ -98,7 +102,7 @@ export default function DirectModePage() {
     return payload;
   }, [
     systemCategory,
-    chiefComplaint,
+    resolvedChiefComplaint,
     patientName,
     patientAge,
     patientGender,
@@ -137,7 +141,7 @@ export default function DirectModePage() {
       saveDirectCase({
         title: title.trim() || caseSpec.chief_complaint_display || caseSpec.clinical_presentation,
         systemCategory,
-        chiefComplaint,
+        chiefComplaint: resolvedChiefComplaint,
         caseSpec,
       });
       alert('저장했습니다. Practice에서 직접 모드로 불러올 수 있습니다.');
@@ -249,6 +253,12 @@ export default function DirectModePage() {
                     </option>
                   ))}
                 </select>
+                <input
+                  value={chiefComplaintCustom}
+                  onChange={(e) => setChiefComplaintCustom(e.target.value)}
+                  placeholder="C.C. 직접 입력 (입력 시 목록보다 우선)"
+                  className="mt-2 w-full rounded-xl border border-black/40 px-3 py-2 text-sm"
+                />
               </div>
             </div>
           </section>

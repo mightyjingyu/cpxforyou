@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// Firebase 콘솔 배포 시 이 파일을 참고하세요.
+// users/{uid}/settings/app 문서는 examTimeDeductionSeconds, memoTemplates,
+// draftMemoContent, directCases(직접 모드 저장 증례) 등을 merge 저장합니다.
+// 별도 필드 규칙 없이 문서 단위로 소유자만 읽기/쓰기 허용하면 됩니다.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/sessions/{sessionId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /users/{userId}/settings/{docId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
