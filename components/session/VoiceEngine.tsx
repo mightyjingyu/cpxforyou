@@ -539,12 +539,7 @@ export default function VoiceEngine({
   );
 
   useEffect(() => {
-    const isTypingTarget = (target: EventTarget | null): boolean => {
-      if (!(target instanceof HTMLElement)) return false;
-      const tag = target.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-      return target.isContentEditable;
-    };
+    /** ₩ / ` / ~ 등: 메모·입력란에 포커스가 있어도 녹음 버튼과 동일하게 토글 (keydown에서 이미 입력 차단) */
     const isToggleKey = (ev: KeyboardEvent) =>
       ev.key === '\\' ||
       ev.key === '₩' ||
@@ -568,7 +563,6 @@ export default function VoiceEngine({
       if (!active || !isToggleKey(ev)) return;
       ev.preventDefault();
       ev.stopPropagation();
-      if (isTypingTarget(ev.target)) return;
       if (toggleLockRef.current) return;
       toggleLockRef.current = true;
       try {
