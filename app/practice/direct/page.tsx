@@ -8,25 +8,7 @@ import { CLINICAL_CATEGORIES, CLINICAL_PRESENTATIONS } from '@/lib/ai/personaTem
 import type { DirectCaseFormPayload, DirectCaseScope } from '@/types/directCase';
 import type { CaseSpec, Difficulty, Friendliness, TimerMode } from '@/types';
 import { useAuth } from '@/components/auth/AuthProvider';
-
-const HISTORY_KEYS = [
-  'O',
-  'L',
-  'D',
-  'Co',
-  'Ex',
-  'C',
-  'A',
-  'F',
-  'E',
-  '외',
-  '과',
-  '가',
-  '약',
-  '사',
-  '여',
-  '기타',
-] as const;
+import { HISTORY_BLOCK_SEMANTICS, HISTORY_KEYS } from '@/lib/ai/historyBlockSemantics';
 
 export default function DirectModePage() {
   const router = useRouter();
@@ -346,16 +328,27 @@ export default function DirectModePage() {
                 라벨은 문진 순서가 아니라 상황 메모입니다. 빈 칸은 AI가 맥락에 맞게 보강할 수 있습니다.
               </p>
               <div className="grid gap-3">
-                {HISTORY_KEYS.map((key) => (
-                  <div key={key}>
-                    <label className="text-[10px] font-bold text-black/40">[{key}]</label>
-                    <input
-                      value={historyBlocks[key] ?? ''}
-                      onChange={(e) => setHistoryField(key, e.target.value)}
-                      className="mt-0.5 w-full rounded-xl border border-black/30 px-3 py-2 text-sm"
-                    />
-                  </div>
-                ))}
+                {HISTORY_KEYS.map((key) => {
+                  const sem = HISTORY_BLOCK_SEMANTICS[key];
+                  return (
+                    <div key={key}>
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
+                        <span className="text-[10px] font-bold text-black/50">[{key}]</span>
+                        <span className="text-[10px] font-mono text-black/35">{sem.en}</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-black/5 text-black/45">
+                          {sem.mnemonic}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-black/40 mt-0.5 leading-snug">{sem.ko}</p>
+                      <input
+                        value={historyBlocks[key] ?? ''}
+                        onChange={(e) => setHistoryField(key, e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-black/30 px-3 py-2 text-sm"
+                        aria-label={`${key} ${sem.en}`}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </section>
           )}

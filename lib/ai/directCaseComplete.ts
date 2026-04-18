@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { CaseSpec } from '@/types';
 import type { DirectCaseFormPayload } from '@/types/directCase';
 import { validateCaseSpec } from '@/lib/ai/caseValidator';
+import { formatHistoryBlockSemanticsForPrompt } from '@/lib/ai/historyBlockSemantics';
 import { getChecklistByClinicalPresentation } from '@/lib/server/clinicalChecklistStore';
 
 function getOpenAIClient() {
@@ -90,7 +91,9 @@ export async function completeDirectCase(payload: DirectCaseFormPayload): Promis
   const prompt = `당신은 의과대학 CPX 케이스 설계자입니다. 사용자가 "직접 모드" 표로 일부만 채운 뒤, 나머지는 당신이 임상적으로 일관되게 보강해 완전한 CaseSpec JSON을 만듭니다.
 
 ## 절대 규칙
-1) scope.history === true 인 경우: historyBlocks에 적힌 내용은 **절대 변경하지 말고** symptom_details·history.hpi 등에 녹여 넣으세요. 라벨(O,L,D,Co,Ex,…)은 문진 질문-답 쌍이 아니라 **상황 설정 메모**입니다. 환자는 의사가 다른 순서로 물어도 같은 사실을 유지합니다.
+1) scope.history === true 인 경우: historyBlocks에 적힌 내용은 **절대 변경하지 말고** 아래 **의미 태그·mergeHint**에 따라 symptom_details·history에 녹여 넣으세요. 라벨은 문진 순서가 아니라 **OLDCAF·과약가사여 등 임상 범주**입니다. 환자는 의사가 다른 순서로 물어도 같은 사실을 유지합니다.
+
+${formatHistoryBlockSemanticsForPrompt()}
 2) scope.history === false 인 경우: 병력·symptom_details·history 전체를 chief_complaint·나이·성별과 맞게 생성하세요.
 3) scope.physical === true 인 경우: 사용자가 준 vitals·physicalExtraLines를 반영하고, 비어 있으면 맥락에 맞게 채우세요.
 4) scope.physical === false 인 경우: 활력징후·physical_exam_findings를 케이스에 맞게 생성하세요.

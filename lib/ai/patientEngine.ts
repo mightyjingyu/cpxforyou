@@ -48,7 +48,7 @@ export function buildDirectHybridSystemPrompt(
   return `${base}
 
 [직접모드 — 환자 사실 시트(고정)]
-의사가 묻는 순서와 무관하게 아래 사실을 유지하세요. O/L/D 등 표 라벨은 문진 순서가 아니라 상황 메모입니다.
+의사가 묻는 순서와 무관하게 아래 사실을 유지하세요. 직접 모드 표의 O/L/D/Co/… 는 OLDCAF·과약가사여 등 **임상 의미 태그**에 해당하며, 이미 symptom_details·history 필드에 녹여 둔 값입니다.
 ${facts}
 
 [직접모드 — 미명시 정보 규칙]

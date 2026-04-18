@@ -24,7 +24,10 @@ export interface DirectCaseFormPayload {
   /** 주호소 한 줄 (시작 화면·opening에 사용) */
   chiefComplaintText: string;
   scope: DirectCaseScope;
-  /** 병력 라벨별 자유 서술 (O, L, D, Co, Ex, C, A, F, E, 외, 과, 가, 약, 사, 여, 기타) */
+  /**
+   * 병력 라벨별 자유 서술. 키는 UI 고정 순서이며, 의미는 `lib/ai/historyBlockSemantics.ts`의
+   * OLDCAF·과약가사여 태그와 1:1 대응한다(단순 문자열이 아님).
+   */
   historyBlocks: Record<string, string>;
   /** scope.physical 일 때 — 비우면 AI가 채움 */
   vitals?: {
