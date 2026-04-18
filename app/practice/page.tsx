@@ -166,95 +166,6 @@ export default function PracticePage() {
         </header>
 
         <div className="flex-1 p-6 w-full max-w-4xl mx-auto space-y-8 mt-6">
-          <section className="rounded-3xl border border-black glass p-6 space-y-4 relative overflow-hidden">
-            <div className="absolute inset-0 border border-white/60 rounded-3xl pointer-events-none" />
-            <div className="relative z-10 flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h2 className="text-sm font-black uppercase tracking-widest text-black">직접 모드</h2>
-                <p className="text-xs text-black/55 mt-1 max-w-md">
-                  표로 만든 증례를 저장해 두었다가, 계통·C.C.로 걸러 시험만 볼 수 있습니다.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => router.push('/practice/direct')}
-                className="shrink-0 px-5 py-2.5 rounded-full border border-black bg-black text-white text-xs font-bold uppercase tracking-widest hover:bg-black/90"
-              >
-                새 증례 만들기
-              </button>
-            </div>
-            <div className="relative z-10 grid sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] font-black text-black/50 uppercase tracking-widest">계통 필터</label>
-                <select
-                  value={directFilterSystem}
-                  onChange={(e) => setDirectFilterSystem(e.target.value)}
-                  className="mt-1 w-full rounded-2xl border border-black px-3 py-2 text-sm bg-white/70"
-                >
-                  <option value="ALL">전체</option>
-                  {Object.keys(CLINICAL_CATEGORIES).map((k) => (
-                    <option key={k} value={k}>
-                      {k}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-black/50 uppercase tracking-widest">C.C. 필터</label>
-                <select
-                  value={directFilterCC}
-                  onChange={(e) => setDirectFilterCC(e.target.value)}
-                  className="mt-1 w-full rounded-2xl border border-black px-3 py-2 text-sm bg-white/70"
-                >
-                  <option value="ALL">전체</option>
-                  {directCcOptions.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            {filteredDirectCases.length === 0 ? (
-              <p className="relative z-10 text-xs text-black/45">저장된 직접 증례가 없습니다. 새 증례 만들기에서 케이스를 완성하세요.</p>
-            ) : (
-              <ul className="relative z-10 space-y-2 max-h-56 overflow-y-auto pr-1">
-                {filteredDirectCases.map((d) => (
-                  <li
-                    key={d.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-black/15 bg-white/60 px-4 py-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-black truncate">{d.title}</p>
-                      <p className="text-[10px] text-black/45 font-medium">
-                        {d.systemCategory} · {d.chiefComplaint}
-                      </p>
-                    </div>
-                    <div className="flex gap-2 shrink-0">
-                      <button
-                        type="button"
-                        disabled={loading}
-                        onClick={() => void handleStartDirectSaved(d)}
-                        className="px-4 py-2 rounded-full bg-black text-white text-[10px] font-bold uppercase tracking-wider disabled:opacity-50"
-                      >
-                        이 증례로 시작
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm('이 증례를 삭제할까요?')) removeDirectCase(d.id);
-                        }}
-                        className="px-3 py-2 rounded-full border border-black/30 text-[10px] font-bold text-black/60 hover:bg-black/5"
-                      >
-                        삭제
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
           <section className="grid md:grid-cols-3 gap-4">
             {[
               { key: 'full_random', title: '완전 랜덤', desc: '임상 + 난이도 모두 랜덤' },
@@ -263,8 +174,9 @@ export default function PracticePage() {
             ].map((item) => (
               <button
                 key={item.key}
+                type="button"
                 onClick={() => setMode(item.key as PracticeMode)}
-                className={`text-left rounded-3xl border transition-all duration-300 p-6 flex flex-col justify-center
+                className={`relative text-left rounded-3xl border transition-all duration-300 p-6 flex flex-col justify-center
                   ${mode === item.key 
                     ? 'border-black bg-black/5 backdrop-blur-xl shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] -translate-y-1' 
                     : 'border-black/20 bg-white/40 hover:bg-white/70 hover:border-black/50 backdrop-blur-md'
@@ -445,6 +357,95 @@ export default function PracticePage() {
                 ) : '이 설정으로 시작'}
               </button>
             </div>
+          </section>
+
+          <section className="rounded-3xl border border-black glass p-6 space-y-4 relative overflow-hidden">
+            <div className="absolute inset-0 border border-white/60 rounded-3xl pointer-events-none" />
+            <div className="relative z-10 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-widest text-black">직접 모드</h2>
+                <p className="text-xs text-black/55 mt-1 max-w-md">
+                  표로 만든 증례를 저장해 두었다가, 계통·C.C.로 걸러 시험만 볼 수 있습니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => router.push('/practice/direct')}
+                className="shrink-0 px-5 py-2.5 rounded-full border border-black bg-black text-white text-xs font-bold uppercase tracking-widest hover:bg-black/90"
+              >
+                새 증례 만들기
+              </button>
+            </div>
+            <div className="relative z-10 grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] font-black text-black/50 uppercase tracking-widest">계통 필터</label>
+                <select
+                  value={directFilterSystem}
+                  onChange={(e) => setDirectFilterSystem(e.target.value)}
+                  className="mt-1 w-full rounded-2xl border border-black px-3 py-2 text-sm bg-white/70"
+                >
+                  <option value="ALL">전체</option>
+                  {Object.keys(CLINICAL_CATEGORIES).map((k) => (
+                    <option key={k} value={k}>
+                      {k}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-black/50 uppercase tracking-widest">C.C. 필터</label>
+                <select
+                  value={directFilterCC}
+                  onChange={(e) => setDirectFilterCC(e.target.value)}
+                  className="mt-1 w-full rounded-2xl border border-black px-3 py-2 text-sm bg-white/70"
+                >
+                  <option value="ALL">전체</option>
+                  {directCcOptions.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {filteredDirectCases.length === 0 ? (
+              <p className="relative z-10 text-xs text-black/45">저장된 직접 증례가 없습니다. 새 증례 만들기에서 케이스를 완성하세요.</p>
+            ) : (
+              <ul className="relative z-10 space-y-2 max-h-56 overflow-y-auto pr-1">
+                {filteredDirectCases.map((d) => (
+                  <li
+                    key={d.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-black/15 bg-white/60 px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-black truncate">{d.title}</p>
+                      <p className="text-[10px] text-black/45 font-medium">
+                        {d.systemCategory} · {d.chiefComplaint}
+                      </p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        type="button"
+                        disabled={loading}
+                        onClick={() => void handleStartDirectSaved(d)}
+                        className="px-4 py-2 rounded-full bg-black text-white text-[10px] font-bold uppercase tracking-wider disabled:opacity-50"
+                      >
+                        이 증례로 시작
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm('이 증례를 삭제할까요?')) removeDirectCase(d.id);
+                        }}
+                        className="px-3 py-2 rounded-full border border-black/30 text-[10px] font-bold text-black/60 hover:bg-black/5"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
         </div>
       </div>
