@@ -15,6 +15,7 @@ export default function Timer({ onTimeUp }: Props) {
     timerStarted,
     isTimerRunning,
     sessionStatus,
+    sessionPhase,
     historyTakingElapsed,
     physicalExamElapsed,
     educationElapsed,
@@ -30,14 +31,21 @@ export default function Timer({ onTimeUp }: Props) {
   }, [onTimeUp]);
 
   useEffect(() => {
-    if (!isTimerRunning || sessionStatus !== 'active' || !timerStarted) return;
+    if (
+      !isTimerRunning ||
+      sessionStatus !== 'active' ||
+      !timerStarted ||
+      sessionPhase === 'physical'
+    ) {
+      return;
+    }
 
     const interval = setInterval(() => {
       tick();
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isTimerRunning, sessionStatus, timerStarted, tick]);
+  }, [isTimerRunning, sessionStatus, timerStarted, sessionPhase, tick]);
 
   const prevRemainingRef = useRef(timeRemaining);
   useEffect(() => {
@@ -105,6 +113,19 @@ export default function Timer({ onTimeUp }: Props) {
           >
             시작
           </button>
+        ) : sessionPhase === 'physical' ? (
+          <>
+            <span className="px-3 py-1.5 rounded-full border border-black/30 bg-black/5 text-black/70 text-[10px] sm:text-xs font-bold tracking-wider">
+              신체진찰 중 · 메인 타이머 정지
+            </span>
+            <button
+              type="button"
+              onClick={resetTimer}
+              className="px-3 py-1.5 rounded-full border border-black/30 text-black/70 text-[10px] sm:text-xs font-bold uppercase tracking-wider hover:border-black hover:text-black transition-colors"
+            >
+              리셋
+            </button>
+          </>
         ) : (
           <>
             {isTimerRunning ? (

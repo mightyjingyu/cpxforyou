@@ -44,6 +44,8 @@ interface SessionState {
   physicalExamElapsed: number;
   educationElapsed: number;
   examTimeDeductionSeconds: number;
+  /** 병력청취 완료 직전 메인 타이머가 돌고 있었는지 — 신체진찰 완료 시 복구용 */
+  prePhysicalTimerWasRunning: boolean;
 
   archivedSessions: SessionData[];
   memoTemplates: Array<{
@@ -161,6 +163,7 @@ export const useSessionStore = create<SessionState>()(
       physicalExamElapsed: 0,
       educationElapsed: 0,
       examTimeDeductionSeconds: DEFAULT_EXAM_DEDUCTION_SECONDS,
+      prePhysicalTimerWasRunning: false,
       archivedSessions: [],
       memoTemplates: [],
       cloudSessionSyncQueue: [],
@@ -190,11 +193,13 @@ export const useSessionStore = create<SessionState>()(
           historyTakingElapsed: 0,
           physicalExamElapsed: 0,
           educationElapsed: 0,
+          prePhysicalTimerWasRunning: false,
         }),
 
       startTimer: () =>
         set((state) => {
           if (state.sessionStatus !== 'active') return state;
+          if (state.sessionPhase === 'physical') return state;
           const now = Date.now();
           const first = state.sessionClockStartedAt == null;
           return {
@@ -225,6 +230,7 @@ export const useSessionStore = create<SessionState>()(
           historyTakingElapsed: 0,
           physicalExamElapsed: 0,
           educationElapsed: 0,
+          prePhysicalTimerWasRunning: false,
         }),
 
       addMessage: (message) =>
@@ -267,14 +273,15 @@ export const useSessionStore = create<SessionState>()(
           ) {
             return state;
           }
+          if (state.sessionPhase === 'physical') {
+            return state;
+          }
           const phaseUpdate =
             state.sessionPhase === 'history'
               ? { historyTakingElapsed: state.historyTakingElapsed + 1 }
-              : state.sessionPhase === 'physical'
-                ? {}
-                : state.sessionPhase === 'education'
-                  ? { educationElapsed: state.educationElapsed + 1 }
-                  : {};
+              : state.sessionPhase === 'education'
+                ? { educationElapsed: state.educationElapsed + 1 }
+                : {};
 
           if (state.timerMode === 'countdown') {
             if (state.timeRemaining <= 0) return state;
@@ -318,6 +325,8 @@ export const useSessionStore = create<SessionState>()(
           physicalExamDone: true,
           physicalExamEndedAt: state.physicalExamEndedAt ?? Date.now(),
           sessionPhase: state.sessionPhase === 'physical' ? 'education' : state.sessionPhase,
+          isTimerRunning: state.prePhysicalTimerWasRunning,
+          prePhysicalTimerWasRunning: false,
         })),
 
       recordPhysicalExamStarted: () =>
@@ -335,6 +344,8 @@ export const useSessionStore = create<SessionState>()(
           return {
             sessionPhase: 'physical',
             physicalExamStartedAt: state.physicalExamStartedAt ?? Date.now(),
+            prePhysicalTimerWasRunning: state.isTimerRunning,
+            isTimerRunning: false,
           };
         }),
 
@@ -542,6 +553,7 @@ export const useSessionStore = create<SessionState>()(
           historyTakingElapsed: 0,
           physicalExamElapsed: 0,
           educationElapsed: 0,
+          prePhysicalTimerWasRunning: false,
         }),
 
       clearVolatileForAccountSwitch: () =>
@@ -568,6 +580,7 @@ export const useSessionStore = create<SessionState>()(
           historyTakingElapsed: 0,
           physicalExamElapsed: 0,
           educationElapsed: 0,
+          prePhysicalTimerWasRunning: false,
         }),
     }),
     {

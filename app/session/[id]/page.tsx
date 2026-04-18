@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { FormEvent, useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import { useSessionStore } from '@/store/sessionStore';
@@ -37,6 +37,8 @@ export default function SessionPage() {
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [examResultTexts, setExamResultTexts] = useState<string[]>([]);
   const [showPhysicalExamGuide, setShowPhysicalExamGuide] = useState(false);
+  const [physicalExamInput, setPhysicalExamInput] = useState('');
+  const [examSubmitting, setExamSubmitting] = useState(false);
   const examResultScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -93,6 +95,36 @@ export default function SessionPage() {
       });
     }
   }, [caseSpec, addMessage, physicalExamDone, sessionPhase]);
+
+  const handlePhysicalExamTextSubmit = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      const text = physicalExamInput.trim();
+      if (!text || !timerStarted || examSubmitting || physicalExamDone || sessionPhase !== 'physical') return;
+      setExamSubmitting(true);
+      setPhysicalExamInput('');
+      addMessage({
+        id: uuidv4(),
+        role: 'user',
+        content: text,
+        timestamp: Date.now(),
+      });
+      try {
+        await handlePhysicalExamTranscript(text);
+      } finally {
+        setExamSubmitting(false);
+      }
+    },
+    [
+      physicalExamInput,
+      timerStarted,
+      examSubmitting,
+      physicalExamDone,
+      sessionPhase,
+      addMessage,
+      handlePhysicalExamTranscript,
+    ]
+  );
 
   const handleHistoryComplete = useCallback(() => {
     completeHistoryTaking();
@@ -179,14 +211,46 @@ export default function SessionPage() {
           </div>
 
           <div className="w-full mt-1 flex flex-col items-center gap-2">
-            <VoiceEngine
-              onVoiceStateChange={setVoiceState}
-              active={sessionStatus === 'active' && timerStarted}
-              sessionPhase={sessionPhase}
-              onPhysicalExamIntent={handlePhysicalExamTranscript}
-              realtimeMode={realtimeMode}
-              onRealtimeModeChange={setRealtimeMode}
-            />
+            {sessionPhase === 'physical' && !physicalExamDone ? (
+              <div className="w-full max-w-md rounded-2xl border border-black bg-white/80 p-4 shadow-sm">
+                <p className="text-[10px] font-black uppercase tracking-widest text-black/50 mb-2">
+                  신체진찰 (텍스트)
+                </p>
+                <p className="text-xs text-black/60 mb-3 leading-relaxed">
+                  이 단계는 음성 대신 아래에 진찰·검사 요청을 입력하세요. 요청하신 항목에 대한 소견만 표시됩니다.
+                </p>
+                <form onSubmit={handlePhysicalExamTextSubmit} className="flex flex-col gap-2">
+                  <textarea
+                    value={physicalExamInput}
+                    onChange={(e) => setPhysicalExamInput(e.target.value)}
+                    placeholder={
+                      timerStarted
+                        ? '예: 복부 진찰, 심장 청진…'
+                        : '타이머 시작 후 입력 가능합니다'
+                    }
+                    disabled={!timerStarted || examSubmitting}
+                    rows={3}
+                    className="w-full rounded-xl border border-black px-3 py-2 text-sm outline-none resize-y min-h-[72px] disabled:opacity-50"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!timerStarted || examSubmitting || !physicalExamInput.trim()}
+                    className="w-full py-2.5 rounded-xl bg-black text-white text-xs font-bold disabled:opacity-40"
+                  >
+                    {examSubmitting ? '소견 생성 중…' : '소견 요청'}
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <VoiceEngine
+                onVoiceStateChange={setVoiceState}
+                active={sessionStatus === 'active' && timerStarted}
+                sessionPhase={sessionPhase}
+                onPhysicalExamIntent={handlePhysicalExamTranscript}
+                realtimeMode={realtimeMode}
+                onRealtimeModeChange={setRealtimeMode}
+              />
+            )}
 
             <div className="w-full flex items-center justify-center gap-2">
               <button
@@ -296,9 +360,9 @@ export default function SessionPage() {
               신체진찰을 시작합니다
             </h3>
             <p className="text-sm text-black/70 mb-8 leading-relaxed font-medium relative z-10">
-              진행할 진찰을 하나하나 말씀하시면
+              진행할 진찰·검사를 아래 입력란에 하나씩 입력하시면
               <br />
-              그에 따른 소견을 드립니다.
+              요청하신 항목에 대한 소견을 드립니다.
             </p>
             <div className="flex flex-col gap-3 relative z-10">
               <button
