@@ -120,7 +120,7 @@ export default function DirectModePage() {
     setLoading(true);
     try {
       const caseSpec = await runComplete();
-      saveDirectCase({
+      await saveDirectCase({
         title: title.trim() || caseSpec.chief_complaint_display || caseSpec.clinical_presentation,
         systemCategory,
         chiefComplaint: resolvedChiefComplaint,

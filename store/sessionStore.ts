@@ -87,7 +87,7 @@ interface SessionState {
   flushCloudSessionSyncQueue: () => Promise<void>;
   loadUserDataFromCloud: (uid: string) => Promise<void>;
   /** includeDraftMemo: 메모 패널에서 온 동기화만 true — false일 때 draftMemoContent 필드를 보내지 않아 빈 상태로 기존 클라우드 메모를 덮어쓰지 않음 */
-  syncUserSettingsToCloud: (opts?: { includeDraftMemo?: boolean }) => Promise<void>;
+  syncUserSettingsToCloud: (opts?: { includeDraftMemo?: boolean }) => Promise<boolean>;
   saveMemoTemplate: (payload: {
     name: string;
     content: string;
@@ -103,8 +103,8 @@ interface SessionState {
     systemCategory: string;
     chiefComplaint: string;
     caseSpec: CaseSpec;
-  }) => string;
-  removeDirectCase: (id: string) => void;
+  }) => Promise<string>;
+  removeDirectCase: (id: string) => Promise<boolean>;
   reset: () => void;
   /** 로그인 uid 전환 시 활성 세션 필드만 비움(아카이브는 loadUserDataFromCloud에서 채움) */
   clearVolatileForAccountSwitch: () => void;
@@ -147,6 +147,38 @@ const scopedSessionStorage = createJSONStorage(() => ({
     window.localStorage.removeItem(getScopedPersistKey(baseName));
   },
 }));
+
+/** 동일 id는 더 최근 updatedAt 증례를 유지 (클라우드·로컬 persist·메모리 병합용) */
+function mergeDirectCasesByUpdatedAt(...lists: DirectCasePersisted[][]): DirectCasePersisted[] {
+  const byId = new Map<string, DirectCasePersisted>();
+  for (const list of lists) {
+    for (const item of list) {
+      if (!item?.id) continue;
+      const prev = byId.get(item.id);
+      if (!prev || item.updatedAt >= prev.updatedAt) {
+        byId.set(item.id, item);
+      }
+    }
+  }
+  return Array.from(byId.values())
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, 200);
+}
+
+/** zustand persist가 아직 rehydrate 전이어도 디스크에 있는 직접 증례를 읽습니다 */
+function readPersistedDirectCasesFromDisk(uid: string): DirectCasePersisted[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const key = `${BASE_PERSIST_KEY}:${uid}`;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as { state?: { directCases?: DirectCasePersisted[] } };
+    const arr = parsed.state?.directCases;
+    return Array.isArray(arr) ? arr.slice(0, 200) : [];
+  } catch {
+    return [];
+  }
+}
 
 export const useSessionStore = create<SessionState>()(
   persist(
@@ -463,21 +495,26 @@ export const useSessionStore = create<SessionState>()(
           const [sessions, settings] = await Promise.all([listUserSessions(uid), loadUserSettings(uid)]);
           set((state) => {
             const fromCloud = settings.draftMemoContent;
-            const fromDisk = readMemoLocalBackup(uid);
+            const fromDiskMemo = readMemoLocalBackup(uid);
             let nextMemo = state.memoContent;
             if (fromCloud !== undefined) {
               nextMemo = fromCloud;
-            } else if (fromDisk != null && fromDisk.length > 0) {
-              nextMemo = fromDisk;
+            } else if (fromDiskMemo != null && fromDiskMemo.length > 0) {
+              nextMemo = fromDiskMemo;
             }
-            if ((fromDisk?.length ?? 0) > (nextMemo?.length ?? 0)) {
-              nextMemo = fromDisk as string;
+            if ((fromDiskMemo?.length ?? 0) > (nextMemo?.length ?? 0)) {
+              nextMemo = fromDiskMemo as string;
             }
             writeMemoLocalBackup(uid, nextMemo);
+            const mergedDirect = mergeDirectCasesByUpdatedAt(
+              settings.directCases ?? [],
+              readPersistedDirectCasesFromDisk(uid),
+              state.directCases ?? []
+            );
             return {
               archivedSessions: sessions,
               memoTemplates: settings.memoTemplates.slice(0, 100),
-              directCases: (settings.directCases ?? []).slice(0, 200),
+              directCases: mergedDirect,
               examTimeDeductionSeconds: Math.min(
                 MAX_EXAM_DEDUCTION_SECONDS,
                 Math.max(MIN_EXAM_DEDUCTION_SECONDS, settings.examTimeDeductionSeconds)
@@ -485,6 +522,8 @@ export const useSessionStore = create<SessionState>()(
               memoContent: nextMemo,
             };
           });
+          // 병합 결과를 Firestore에 반영해 다른 기기·다음 로드에서도 유지 (직접 증례 유실 방지)
+          await get().syncUserSettingsToCloud();
         } catch (e) {
           console.error('loadUserDataFromCloud failed:', e);
         }
@@ -494,7 +533,7 @@ export const useSessionStore = create<SessionState>()(
         try {
           const auth = getFirebaseAuth();
           const user = auth.currentUser;
-          if (!user) return;
+          if (!user) return false;
           const s = get();
           const base = {
             examTimeDeductionSeconds: s.examTimeDeductionSeconds,
@@ -510,8 +549,10 @@ export const useSessionStore = create<SessionState>()(
           } else {
             await saveUserSettings(user.uid, base);
           }
+          return true;
         } catch (e) {
           console.error('syncUserSettingsToCloud failed:', e);
+          return false;
         }
       },
 
@@ -576,7 +617,7 @@ export const useSessionStore = create<SessionState>()(
         scheduleDraftMemoSync();
       },
 
-      saveDirectCase: ({ title, systemCategory, chiefComplaint, caseSpec }) => {
+      saveDirectCase: async ({ title, systemCategory, chiefComplaint, caseSpec }) => {
         const id = crypto.randomUUID();
         const now = Date.now();
         const entry: DirectCasePersisted = {
@@ -590,15 +631,20 @@ export const useSessionStore = create<SessionState>()(
         set((state) => ({
           directCases: [entry, ...(state.directCases ?? []).filter((d) => d.id !== id)].slice(0, 200),
         }));
-        void get().syncUserSettingsToCloud();
+        const ok = await get().syncUserSettingsToCloud();
+        if (!ok) {
+          throw new Error(
+            'Firestore에 저장하지 못했습니다. 로그인 상태·네트워크를 확인한 뒤 다시 시도해주세요.'
+          );
+        }
         return id;
       },
 
-      removeDirectCase: (id) => {
+      removeDirectCase: async (id) => {
         set((state) => ({
           directCases: (state.directCases ?? []).filter((d) => d.id !== id),
         }));
-        void get().syncUserSettingsToCloud();
+        return get().syncUserSettingsToCloud();
       },
 
       reset: () =>

@@ -1,5 +1,6 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getFirebaseDb } from './client';
+import { stripUndefinedDeep } from './sanitizeForFirestore';
 import type { DirectCasePersisted } from '@/types/directCase';
 
 export type MemoTemplatePersisted = {
@@ -52,12 +53,9 @@ export async function saveUserSettings(
   userId: string,
   partial: Pick<UserSettingsDoc, 'examTimeDeductionSeconds' | 'memoTemplates' | 'directCases' | 'draftMemoContent'>
 ): Promise<void> {
-  await setDoc(
-    settingsRef(userId),
-    {
-      ...partial,
-      updatedAt: Date.now(),
-    },
-    { merge: true }
-  );
+  const payload = stripUndefinedDeep({
+    ...partial,
+    updatedAt: Date.now(),
+  });
+  await setDoc(settingsRef(userId), payload, { merge: true });
 }

@@ -435,7 +435,11 @@ export default function PracticePage() {
                       <button
                         type="button"
                         onClick={() => {
-                          if (confirm('이 증례를 삭제할까요?')) removeDirectCase(d.id);
+                          void (async () => {
+                            if (!confirm('이 증례를 삭제할까요?')) return;
+                            const ok = await removeDirectCase(d.id);
+                            if (!ok) alert('클라우드에 삭제를 반영하지 못했습니다. 네트워크를 확인해 주세요.');
+                          })();
                         }}
                         className="px-3 py-2 rounded-full border border-black/30 text-[10px] font-bold text-black/60 hover:bg-black/5"
                       >
