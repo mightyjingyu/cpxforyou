@@ -1,5 +1,6 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getFirebaseDb } from './client';
+import type { DirectCasePersisted } from '@/types/directCase';
 
 export type MemoTemplatePersisted = {
   id: string;
@@ -12,6 +13,8 @@ export type MemoTemplatePersisted = {
 export type UserSettingsDoc = {
   examTimeDeductionSeconds: number;
   memoTemplates: MemoTemplatePersisted[];
+  /** 직접 모드로 저장한 완성 케이스 */
+  directCases?: DirectCasePersisted[];
   /** 진료 중 메모 패널 초안 — 로그인 시 클라우드에 동기화되어 기기 간 유지 */
   draftMemoContent?: string;
   updatedAt: number;
@@ -29,6 +32,7 @@ export async function loadUserSettings(userId: string): Promise<UserSettingsDoc>
     return {
       examTimeDeductionSeconds: DEFAULT_EXAM,
       memoTemplates: [],
+      directCases: [],
       draftMemoContent: undefined,
       updatedAt: Date.now(),
     };
@@ -38,6 +42,7 @@ export async function loadUserSettings(userId: string): Promise<UserSettingsDoc>
     examTimeDeductionSeconds:
       typeof d.examTimeDeductionSeconds === 'number' ? d.examTimeDeductionSeconds : DEFAULT_EXAM,
     memoTemplates: Array.isArray(d.memoTemplates) ? d.memoTemplates : [],
+    directCases: Array.isArray(d.directCases) ? d.directCases.slice(0, 200) : [],
     draftMemoContent: typeof d.draftMemoContent === 'string' ? d.draftMemoContent : undefined,
     updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : Date.now(),
   };
@@ -45,7 +50,7 @@ export async function loadUserSettings(userId: string): Promise<UserSettingsDoc>
 
 export async function saveUserSettings(
   userId: string,
-  partial: Pick<UserSettingsDoc, 'examTimeDeductionSeconds' | 'memoTemplates' | 'draftMemoContent'>
+  partial: Pick<UserSettingsDoc, 'examTimeDeductionSeconds' | 'memoTemplates' | 'directCases' | 'draftMemoContent'>
 ): Promise<void> {
   await setDoc(
     settingsRef(userId),

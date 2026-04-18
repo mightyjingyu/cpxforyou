@@ -13,6 +13,7 @@ import { getFirebaseAuth } from '@/lib/firebase/client';
 import { saveUserSession, listUserSessions } from '@/lib/firebase/userSessions';
 import { readMemoLocalBackup, writeMemoLocalBackup } from '@/lib/memoLocalBackup';
 import { loadUserSettings, saveUserSettings } from '@/lib/firebase/userSettingsDoc';
+import type { DirectCasePersisted } from '@/types/directCase';
 
 const DEFAULT_COUNTDOWN_SECONDS = 720;
 
@@ -56,6 +57,8 @@ interface SessionState {
     clinicalPresentation?: string;
     updatedAt: number;
   }>;
+  /** 직접 모드 저장 증례 (Firestore 동기화) */
+  directCases: DirectCasePersisted[];
   cloudSessionSyncQueue: CloudSessionRetryItem[];
 
   startSession: (
@@ -95,6 +98,13 @@ interface SessionState {
     payload: { name: string; content: string; clinicalPresentation?: string }
   ) => void;
   applyMemoTemplate: (templateId: string) => void;
+  saveDirectCase: (payload: {
+    title: string;
+    systemCategory: string;
+    chiefComplaint: string;
+    caseSpec: CaseSpec;
+  }) => string;
+  removeDirectCase: (id: string) => void;
   reset: () => void;
   /** 로그인 uid 전환 시 활성 세션 필드만 비움(아카이브는 loadUserDataFromCloud에서 채움) */
   clearVolatileForAccountSwitch: () => void;
@@ -168,6 +178,7 @@ export const useSessionStore = create<SessionState>()(
       prePhysicalTimerWasRunning: false,
       archivedSessions: [],
       memoTemplates: [],
+      directCases: [],
       cloudSessionSyncQueue: [],
 
       startSession: (caseSpec, sessionId, difficulty, timerMode = 'countdown') =>
@@ -466,6 +477,7 @@ export const useSessionStore = create<SessionState>()(
             return {
               archivedSessions: sessions,
               memoTemplates: settings.memoTemplates.slice(0, 100),
+              directCases: (settings.directCases ?? []).slice(0, 200),
               examTimeDeductionSeconds: Math.min(
                 MAX_EXAM_DEDUCTION_SECONDS,
                 Math.max(MIN_EXAM_DEDUCTION_SECONDS, settings.examTimeDeductionSeconds)
@@ -487,6 +499,7 @@ export const useSessionStore = create<SessionState>()(
           const base = {
             examTimeDeductionSeconds: s.examTimeDeductionSeconds,
             memoTemplates: s.memoTemplates,
+            directCases: s.directCases ?? [],
           };
           if (opts?.includeDraftMemo) {
             await saveUserSettings(user.uid, {
@@ -563,6 +576,31 @@ export const useSessionStore = create<SessionState>()(
         scheduleDraftMemoSync();
       },
 
+      saveDirectCase: ({ title, systemCategory, chiefComplaint, caseSpec }) => {
+        const id = crypto.randomUUID();
+        const now = Date.now();
+        const entry: DirectCasePersisted = {
+          id,
+          title: title.trim() || '제목 없음',
+          systemCategory: systemCategory.trim(),
+          chiefComplaint: chiefComplaint.trim(),
+          caseSpec,
+          updatedAt: now,
+        };
+        set((state) => ({
+          directCases: [entry, ...(state.directCases ?? []).filter((d) => d.id !== id)].slice(0, 200),
+        }));
+        void get().syncUserSettingsToCloud();
+        return id;
+      },
+
+      removeDirectCase: (id) => {
+        set((state) => ({
+          directCases: (state.directCases ?? []).filter((d) => d.id !== id),
+        }));
+        void get().syncUserSettingsToCloud();
+      },
+
       reset: () =>
         set({
           caseSpec: null,
@@ -624,6 +662,7 @@ export const useSessionStore = create<SessionState>()(
         archivedSessions: state.archivedSessions,
         examTimeDeductionSeconds: state.examTimeDeductionSeconds,
         memoTemplates: state.memoTemplates,
+        directCases: state.directCases,
         memoContent: state.memoContent,
         cloudSessionSyncQueue: state.cloudSessionSyncQueue,
       }),

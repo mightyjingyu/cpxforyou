@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import OpenAI from 'openai';
-import { buildSystemPrompt } from '@/lib/ai/patientEngine';
+import { buildDirectHybridSystemPrompt, buildSystemPrompt } from '@/lib/ai/patientEngine';
 import { appendChatTurn, getChatSession } from '@/lib/server/chatSessionStore';
 import { CaseSpec, Message } from '@/types';
 
@@ -86,17 +86,20 @@ export async function POST(req: NextRequest) {
       unfriendlinessByDifficulty[difficulty] * 0.35 +
       unfriendlinessByFriendliness[friendliness] * 0.65
     );
-    const systemPrompt = buildSystemPrompt(
-      caseSpec.clinical_presentation,
-      caseSpec.opening_line || caseSpec.clinical_presentation,
-      caseSpec.true_diagnosis,
-      difficulty,
-      unfriendliness,
-      caseSpec.patient.name,
-      caseSpec.patient.age,
-      caseSpec.patient.gender,
-      caseSpec.answer_key
-    );
+    const systemPrompt =
+      caseSpec.case_source === 'direct_hybrid'
+        ? buildDirectHybridSystemPrompt(caseSpec, difficulty, unfriendliness)
+        : buildSystemPrompt(
+            caseSpec.clinical_presentation,
+            caseSpec.opening_line || caseSpec.clinical_presentation,
+            caseSpec.true_diagnosis,
+            difficulty,
+            unfriendliness,
+            caseSpec.patient.name,
+            caseSpec.patient.age,
+            caseSpec.patient.gender,
+            caseSpec.answer_key
+          );
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
       ...conversationHistory.slice(-6).map((m) => ({

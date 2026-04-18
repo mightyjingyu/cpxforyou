@@ -249,6 +249,11 @@ export default function SessionMessagePage() {
             <p className="text-sm font-black">
               {caseSpec.patient.name} ({caseSpec.patient.age}세 / {caseSpec.patient.gender})
             </p>
+            {caseSpec.chief_complaint_display && (
+              <p className="mt-2 text-xs font-medium text-black/80 leading-snug border-t border-black/10 pt-2">
+                주호소: {caseSpec.chief_complaint_display}
+              </p>
+            )}
             <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono font-bold">
               <span>BP {caseSpec.vitals.bp}</span>
               <span>HR {caseSpec.vitals.hr}</span>

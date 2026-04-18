@@ -1,5 +1,61 @@
 import { AnswerKey, CaseSpec } from '@/types';
 
+function formatDirectCaseFacts(spec: CaseSpec): string {
+  const h = spec.history;
+  const soc = h.social;
+  const sd = spec.symptom_details;
+  return `
+[주호소 표시] ${spec.chief_complaint_display ?? spec.opening_line ?? ''}
+[현병력/병력 서술] ${h.hpi}
+[symptom_details]
+- 발생/시기: ${sd.onset}
+- 부위: ${sd.location ?? ''}
+- 지속: ${sd.duration}
+- 양상: ${sd.character}
+- 악화: ${sd.aggravating}
+- 완화: ${sd.relieving}
+- 동반: ${sd.associated}
+- 부정: ${sd.denied}
+[과거력] ${h.past_medical}
+[약물] ${h.medications}
+[알레르기] ${h.allergies}
+[가족력] ${h.family}
+[사회력] 흡연 ${soc.smoking}, 음주 ${soc.alcohol}, 직업 ${soc.occupation ?? ''} ${soc.last_menstrual ? `월경: ${soc.last_menstrual}` : ''}
+[성격/걱정] ${spec.personality} / ${spec.patient_concern}
+[활력] BP ${spec.vitals.bp}, HR ${spec.vitals.hr}, RR ${spec.vitals.rr}, T ${spec.vitals.temp}
+[신체진찰] ${spec.physical_exam_findings}
+`.trim();
+}
+
+/** 직접 모드: 표·보강된 전체 사실을 시스템 프롬프트에 포함 */
+export function buildDirectHybridSystemPrompt(
+  caseSpec: CaseSpec,
+  difficulty: 'easy' | 'normal' | 'hard',
+  unfriendliness: number
+): string {
+  const base = buildSystemPrompt(
+    caseSpec.clinical_presentation,
+    caseSpec.opening_line || caseSpec.clinical_presentation,
+    caseSpec.true_diagnosis,
+    difficulty,
+    unfriendliness,
+    caseSpec.patient.name,
+    caseSpec.patient.age,
+    caseSpec.patient.gender,
+    caseSpec.answer_key
+  );
+  const facts = formatDirectCaseFacts(caseSpec);
+  return `${base}
+
+[직접모드 — 환자 사실 시트(고정)]
+의사가 묻는 순서와 무관하게 아래 사실을 유지하세요. O/L/D 등 표 라벨은 문진 순서가 아니라 상황 메모입니다.
+${facts}
+
+[직접모드 — 미명시 정보 규칙]
+위 사실 시트에 없는 세부를 물으면 "잘 모르겠어요"이거나, 1~3순위 예상 진단(${caseSpec.answer_key.diagnosis_ranked.join(', ')})에 흔히 동반될 수 있는 정도로만 답하고 그 밖은 모른다고 하세요. 시트 사실과 모순되면 안 됩니다.
+`.trim();
+}
+
 export function buildSystemPrompt(
   clinicalPresentation: string,
   mainSymptom: string,

@@ -201,6 +201,11 @@ export default function SessionPage() {
             <div className="rounded-2xl border border-black bg-white/80 p-4 min-w-[290px]">
               <p className="text-[10px] font-black tracking-widest uppercase text-black/50 mb-2">Patient / Vitals</p>
               <p className="text-sm font-black">{caseSpec.patient.name} ({caseSpec.patient.age}세 / {caseSpec.patient.gender})</p>
+              {caseSpec.chief_complaint_display && (
+                <p className="mt-2 text-xs font-medium text-black/80 leading-snug border-t border-black/10 pt-2">
+                  주호소: {caseSpec.chief_complaint_display}
+                </p>
+              )}
               <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono font-bold">
                 <span>BP {caseSpec.vitals.bp}</span>
                 <span>HR {caseSpec.vitals.hr}</span>
