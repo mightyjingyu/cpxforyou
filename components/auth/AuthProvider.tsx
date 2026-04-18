@@ -3,7 +3,11 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { signInWithGoogle, signOutGoogle, subscribeAuthState } from '@/lib/firebase/auth';
-import { syncSessionWithAuthScope, useSessionStore } from '@/store/sessionStore';
+import {
+  flushDraftMemoToCloud,
+  syncSessionWithAuthScope,
+  useSessionStore,
+} from '@/store/sessionStore';
 
 type AuthContextValue = {
   user: User | null;
@@ -37,6 +41,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     syncSessionWithAuthScope(user?.uid ?? null);
   }, [authLoading, user?.uid]);
 
+  /** 탭 종료·백그라운드 전환 직전 메모를 Firestore에 남김 (디바운스 미완료 대비) */
+  useEffect(() => {
+    const flush = () => {
+      void flushDraftMemoToCloud();
+    };
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -45,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await signInWithGoogle();
       },
       logout: async () => {
+        await flushDraftMemoToCloud();
         await signOutGoogle();
       },
     }),

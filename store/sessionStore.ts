@@ -104,8 +104,8 @@ const MAX_EXAM_DEDUCTION_SECONDS = 600;
 /** v2: Firestore 전체 동기화 도입 — 이전 로컬 키와 분리 */
 const BASE_PERSIST_KEY = 'cpx-session-storage-v2';
 
-/** AuthProvider에서 동일 uid로 syncSessionWithAuthScope가 반복 호출되지 않게 함 */
-let lastSyncedAuthScope: string | null | undefined = undefined;
+/** 탭 단위로만 사용. 새로고침 시에도 동일 uid면 clearVolatile를 호출하지 않아 메모·persist가 유지된다. */
+const AUTH_SCOPE_SESSION_KEY = 'cpx-auth-scope';
 
 function getPersistScope(): string {
   if (typeof window === 'undefined') return 'server';
@@ -611,21 +611,44 @@ function scheduleDraftMemoSync() {
   draftMemoSyncTimer = setTimeout(() => {
     draftMemoSyncTimer = null;
     void useSessionStore.getState().syncUserSettingsToCloud();
-  }, 650);
+  }, 400);
+}
+
+/** 디바운스 대기 없이 즉시 Firestore(로그인 시)·로컬 persist에 반영 */
+export async function flushDraftMemoToCloud(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  if (draftMemoSyncTimer) {
+    clearTimeout(draftMemoSyncTimer);
+    draftMemoSyncTimer = null;
+  }
+  await useSessionStore.getState().syncUserSettingsToCloud();
 }
 
 /**
- * Firebase uid(또는 비로그인 guest)가 바뀔 때만 호출.
- * 로그인: Firestore에서 아카이브·설정 로드. 비로그인: 로컬 persist만 재적용.
- * (아카이브를 비운 뒤 덮어쓰지 않아 로그인 시 데이터 유실 방지)
+ * 계정 전환 시에만 volatile 초기화. 같은 탭에서 새로고침(uid 동일)이면 메모를 지우지 않는다.
  */
 export async function syncSessionWithAuthScope(uid: string | null) {
   if (typeof window === 'undefined') return;
-  const scope = uid ?? 'guest';
-  if (lastSyncedAuthScope === scope) return;
-  lastSyncedAuthScope = scope;
-  useSessionStore.getState().clearVolatileForAccountSwitch();
-  await useSessionStore.persist.rehydrate();
+  const next = uid ?? 'guest';
+  const stored = sessionStorage.getItem(AUTH_SCOPE_SESSION_KEY);
+
+  if (stored === next) {
+    if (uid) {
+      await useSessionStore.getState().loadUserDataFromCloud(uid);
+    }
+    return;
+  }
+
+  const isAccountSwitch = stored !== null && stored !== next;
+
+  if (isAccountSwitch) {
+    await flushDraftMemoToCloud();
+    useSessionStore.getState().clearVolatileForAccountSwitch();
+    await useSessionStore.persist.rehydrate();
+  }
+
+  sessionStorage.setItem(AUTH_SCOPE_SESSION_KEY, next);
+
   if (uid) {
     await useSessionStore.getState().loadUserDataFromCloud(uid);
   }
