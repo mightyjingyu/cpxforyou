@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { signInWithGoogle, signOutGoogle, subscribeAuthState } from '@/lib/firebase/auth';
+import { readMemoLocalBackup, writeMemoLocalBackup } from '@/lib/memoLocalBackup';
 import {
   flushDraftMemoToCloud,
   syncSessionWithAuthScope,
@@ -39,6 +40,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (authLoading) return;
     syncSessionWithAuthScope(user?.uid ?? null);
+  }, [authLoading, user?.uid]);
+
+  /** 게스트로 쓴 메모를 로그인 uid 슬롯으로 옮김 + 디스크 백업이 더 길면 스토어에 반영 */
+  useEffect(() => {
+    if (authLoading) return;
+    if (user?.uid) {
+      const guestMemo = readMemoLocalBackup('guest');
+      const uidMemo = readMemoLocalBackup(user.uid);
+      if ((!uidMemo || uidMemo.length === 0) && guestMemo && guestMemo.length > 0) {
+        writeMemoLocalBackup(user.uid, guestMemo);
+        useSessionStore.setState((s) => ({
+          memoContent: s.memoContent?.trim() ? s.memoContent : guestMemo,
+        }));
+      }
+    }
+    const uid = user?.uid ?? 'guest';
+    const disk = readMemoLocalBackup(uid);
+    if (!disk?.length) return;
+    const cur = useSessionStore.getState().memoContent;
+    if (disk.length > (cur?.length ?? 0)) {
+      useSessionStore.setState({ memoContent: disk });
+    }
   }, [authLoading, user?.uid]);
 
   /** 탭 종료·백그라운드 전환 직전 메모를 Firestore에 남김 (디바운스 미완료 대비) */

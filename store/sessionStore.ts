@@ -11,6 +11,7 @@ import {
 } from '@/types';
 import { getFirebaseAuth } from '@/lib/firebase/client';
 import { saveUserSession, listUserSessions } from '@/lib/firebase/userSessions';
+import { readMemoLocalBackup, writeMemoLocalBackup } from '@/lib/memoLocalBackup';
 import { loadUserSettings, saveUserSettings } from '@/lib/firebase/userSettingsDoc';
 
 const DEFAULT_COUNTDOWN_SECONDS = 720;
@@ -318,6 +319,8 @@ export const useSessionStore = create<SessionState>()(
       },
 
       setMemo: (content) => {
+        const uid = getFirebaseAuth().currentUser?.uid ?? 'guest';
+        writeMemoLocalBackup(uid, content);
         set({ memoContent: content });
         scheduleDraftMemoSync();
       },
@@ -446,16 +449,29 @@ export const useSessionStore = create<SessionState>()(
       loadUserDataFromCloud: async (uid: string) => {
         try {
           const [sessions, settings] = await Promise.all([listUserSessions(uid), loadUserSettings(uid)]);
-          set((state) => ({
-            archivedSessions: sessions,
-            memoTemplates: settings.memoTemplates.slice(0, 100),
-            examTimeDeductionSeconds: Math.min(
-              MAX_EXAM_DEDUCTION_SECONDS,
-              Math.max(MIN_EXAM_DEDUCTION_SECONDS, settings.examTimeDeductionSeconds)
-            ),
-            memoContent:
-              settings.draftMemoContent !== undefined ? settings.draftMemoContent : state.memoContent,
-          }));
+          set((state) => {
+            const fromCloud = settings.draftMemoContent;
+            const fromDisk = readMemoLocalBackup(uid);
+            let nextMemo = state.memoContent;
+            if (fromCloud !== undefined) {
+              nextMemo = fromCloud;
+            } else if (fromDisk != null && fromDisk.length > 0) {
+              nextMemo = fromDisk;
+            }
+            if ((fromDisk?.length ?? 0) > (nextMemo?.length ?? 0)) {
+              nextMemo = fromDisk as string;
+            }
+            writeMemoLocalBackup(uid, nextMemo);
+            return {
+              archivedSessions: sessions,
+              memoTemplates: settings.memoTemplates.slice(0, 100),
+              examTimeDeductionSeconds: Math.min(
+                MAX_EXAM_DEDUCTION_SECONDS,
+                Math.max(MIN_EXAM_DEDUCTION_SECONDS, settings.examTimeDeductionSeconds)
+              ),
+              memoContent: nextMemo,
+            };
+          });
         } catch (e) {
           console.error('loadUserDataFromCloud failed:', e);
         }
@@ -472,6 +488,7 @@ export const useSessionStore = create<SessionState>()(
             memoTemplates: s.memoTemplates,
             draftMemoContent: s.memoContent,
           });
+          writeMemoLocalBackup(user.uid, s.memoContent);
         } catch (e) {
           console.error('syncUserSettingsToCloud failed:', e);
         }
@@ -531,6 +548,8 @@ export const useSessionStore = create<SessionState>()(
         set((state) => {
           const picked = state.memoTemplates.find((t) => t.id === templateId);
           if (!picked) return state;
+          const uid = getFirebaseAuth().currentUser?.uid ?? 'guest';
+          writeMemoLocalBackup(uid, picked.content);
           return { memoContent: picked.content };
         });
         scheduleDraftMemoSync();
