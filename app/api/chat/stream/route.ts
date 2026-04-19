@@ -149,8 +149,8 @@ export async function POST(req: NextRequest) {
     const llmStream = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       messages,
-      max_tokens: 120,
-      temperature: 0.35,
+      max_tokens: 72,
+      temperature: 0.28,
       stream: true,
     });
 

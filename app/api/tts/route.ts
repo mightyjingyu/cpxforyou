@@ -7,7 +7,8 @@ function getOpenAIClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
-type TtsVoice = 'alloy' | 'nova';
+/** OpenAI TTS: 여성 계열 nova/shimmer, 남성 계열 onyx/echo */
+type TtsVoice = 'nova' | 'shimmer' | 'onyx' | 'echo' | 'alloy';
 
 function normalizeGender(value?: string): 'male' | 'female' | 'unknown' {
   if (!value) return 'unknown';
@@ -20,7 +21,7 @@ function normalizeGender(value?: string): 'male' | 'female' | 'unknown' {
 function pickVoice(genderRaw?: string): TtsVoice {
   const gender = normalizeGender(genderRaw);
   if (gender === 'female') return 'nova';
-  // 환자 성별이 남성(또는 미인식)일 때는 남성 톤으로 고정한다.
+  if (gender === 'male') return 'onyx';
   return 'alloy';
 }
 

@@ -27,6 +27,10 @@ export default function PracticePage() {
   const [customMode, setCustomMode] = useState<CustomPoolMode>('full_random');
   const [customCategory, setCustomCategory] = useState<string>(Object.keys(CLINICAL_CATEGORIES)[0] || '');
   const [customPresentation, setCustomPresentation] = useState<string>(CLINICAL_PRESENTATIONS[0] || '');
+  const [customDifficulty, setCustomDifficulty] = useState<Difficulty>('normal');
+  const [customFriendliness, setCustomFriendliness] = useState<Friendliness>('normal');
+  const [customTimerMode, setCustomTimerMode] = useState<TimerMode>('countdown');
+  const [customInteractionMode, setCustomInteractionMode] = useState<'voice' | 'text'>('voice');
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -128,22 +132,27 @@ export default function PracticePage() {
     try {
       const caseSpec = entry.caseSpec;
       const sessionId = uuidv4();
+      const useFilterModes = customMode === 'category_random' || customMode === 'clinical_pick';
+      const resolvedDifficulty = useFilterModes ? customDifficulty : caseSpec.difficulty;
+      const resolvedFriendliness = useFilterModes
+        ? customFriendliness
+        : entry.formPayload?.friendliness ?? 'normal';
       const reg = await fetch('/api/session/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId,
           caseSpec,
-          difficulty: caseSpec.difficulty,
-          friendliness,
+          difficulty: resolvedDifficulty,
+          friendliness: resolvedFriendliness,
         }),
       });
       if (!reg.ok) {
         const err = await reg.json().catch(() => ({}));
         throw new Error((err as { error?: string }).error || '세션 등록 실패');
       }
-      startSession(caseSpec, sessionId, caseSpec.difficulty, timerMode);
-      router.push(interactionMode === 'voice' ? `/session/${sessionId}` : `/session-message/${sessionId}`);
+      startSession(caseSpec, sessionId, resolvedDifficulty, customTimerMode);
+      router.push(customInteractionMode === 'voice' ? `/session/${sessionId}` : `/session-message/${sessionId}`);
     } catch (e) {
       console.error(e);
       alert('시작에 실패했습니다.');
@@ -472,6 +481,127 @@ export default function PracticePage() {
                 </select>
               </div>
             )}
+
+            <div className="relative z-10 space-y-5 pt-2 border-t border-black/10">
+              {(customMode === 'category_random' || customMode === 'clinical_pick') && (
+                <div className="space-y-5">
+                  <div>
+                    <label className="text-[10px] font-black text-black uppercase tracking-widest mb-2 block">난이도</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { value: 'easy' as const, label: '쉬움' },
+                        { value: 'normal' as const, label: '보통' },
+                        { value: 'hard' as const, label: '어려움' },
+                      ].map((d) => (
+                        <button
+                          key={d.value}
+                          type="button"
+                          onClick={() => setCustomDifficulty(d.value)}
+                          className={`rounded-2xl py-2.5 text-xs font-bold border transition-all ${
+                            customDifficulty === d.value
+                              ? 'bg-black text-white border-black shadow-md'
+                              : 'bg-white/50 text-black/70 border-black/20 hover:border-black/50'
+                          }`}
+                        >
+                          {d.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-black uppercase tracking-widest mb-2 block">환자 태도</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { value: 'cooperative' as const, label: '협조적' },
+                        { value: 'normal' as const, label: '보통' },
+                        { value: 'uncooperative' as const, label: '비협조적' },
+                      ].map((f) => (
+                        <button
+                          key={f.value}
+                          type="button"
+                          onClick={() => setCustomFriendliness(f.value)}
+                          className={`rounded-2xl py-2.5 text-xs font-bold border transition-all ${
+                            customFriendliness === f.value
+                              ? 'bg-black text-white border-black shadow-md'
+                              : 'bg-white/50 text-black/70 border-black/20 hover:border-black/50'
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[10px] font-black text-black uppercase tracking-widest mb-2 block">진행 방식</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCustomInteractionMode('voice')}
+                    className={`text-left rounded-2xl border p-3 transition-all ${
+                      customInteractionMode === 'voice'
+                        ? 'border-black bg-black text-white shadow-md'
+                        : 'border-black/20 bg-white/50 hover:border-black/40'
+                    }`}
+                  >
+                    <p className="text-xs font-black mb-0.5">음성 세션</p>
+                    <p className={`text-[10px] font-medium leading-relaxed ${customInteractionMode === 'voice' ? 'text-white/80' : 'text-black/50'}`}>
+                      마이크로 대화
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomInteractionMode('text')}
+                    className={`text-left rounded-2xl border p-3 transition-all ${
+                      customInteractionMode === 'text'
+                        ? 'border-black bg-black text-white shadow-md'
+                        : 'border-black/20 bg-white/50 hover:border-black/40'
+                    }`}
+                  >
+                    <p className="text-xs font-black mb-0.5">메시지 세션</p>
+                    <p className={`text-[10px] font-medium leading-relaxed ${customInteractionMode === 'text' ? 'text-white/80' : 'text-black/50'}`}>
+                      채팅으로 대화
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-black uppercase tracking-widest mb-2 block">타이머 방식</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCustomTimerMode('countdown')}
+                    className={`text-left rounded-2xl border p-3 transition-all ${
+                      customTimerMode === 'countdown'
+                        ? 'border-black bg-black text-white shadow-md'
+                        : 'border-black/20 bg-white/50 hover:border-black/40'
+                    }`}
+                  >
+                    <p className="text-xs font-black mb-0.5">카운트다운 (12분)</p>
+                    <p className={`text-[10px] font-medium ${customTimerMode === 'countdown' ? 'text-white/80' : 'text-black/50'}`}>
+                      12분 제한
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomTimerMode('countup')}
+                    className={`text-left rounded-2xl border p-3 transition-all ${
+                      customTimerMode === 'countup'
+                        ? 'border-black bg-black text-white shadow-md'
+                        : 'border-black/20 bg-white/50 hover:border-black/40'
+                    }`}
+                  >
+                    <p className="text-xs font-black mb-0.5">카운트업</p>
+                    <p className={`text-[10px] font-medium ${customTimerMode === 'countup' ? 'text-white/80' : 'text-black/50'}`}>
+                      무제한
+                    </p>
+                  </button>
+                </div>
+              </div>
+            </div>
 
             <div className="relative z-10 flex flex-wrap items-center gap-2 text-[10px] text-black/50">
               <span className="font-bold text-black/60">

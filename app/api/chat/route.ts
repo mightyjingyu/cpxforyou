@@ -116,8 +116,8 @@ export async function POST(req: NextRequest) {
     const response = await client.chat.completions.create({
       model: 'gpt-4o',
       messages,
-      max_tokens: 120,
-      temperature: 0.35,
+      max_tokens: 72,
+      temperature: 0.28,
     });
 
     const patientReply = response.choices[0]?.message?.content || '';
