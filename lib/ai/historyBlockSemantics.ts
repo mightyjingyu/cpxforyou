@@ -1,5 +1,5 @@
 /**
- * 직접 모드 병력 표 라벨 — OLD COEX + 증상 특성(C/A/F/E) + 약·사·가·외·과·여 (제공된 임상 정의 고정).
+ * Custom Mode 병력 표 라벨 — OLD COEX + 증상 특성(C/A/F/E) + 약·사·가·외·과·여 (제공된 임상 정의 고정).
  * 케이스 완성 LLM과 UI 힌트에 동일하게 사용한다.
  */
 export const HISTORY_KEYS = [

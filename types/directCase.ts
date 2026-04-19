@@ -1,6 +1,6 @@
 import type { CaseSpec, Difficulty } from '@/types';
 
-/** 직접 모드: 어떤 블록을 사용자가 직접 쓸지 */
+/** Custom Mode: 어떤 블록을 사용자가 직접 쓸지 */
 export type DirectCaseScope = {
   /** 병력청취 표 (OLD COEX·HPI·배경) */
   history: boolean;
@@ -11,7 +11,7 @@ export type DirectCaseScope = {
 };
 
 /**
- * 직접 모드 폼 → /api/case/direct-complete
+ * Custom Mode 폼 → /api/case/direct-complete
  * 체크한 섹션만 사용자가 채우고, 체크하지 않은 섹션은 서버에서 LLM으로 보강한다.
  */
 export interface DirectCaseFormPayload {
@@ -54,4 +54,6 @@ export type DirectCasePersisted = {
   /** 완성된 CaseSpec (case_source direct_hybrid 포함) */
   caseSpec: CaseSpec;
   updatedAt: number;
+  /** 저장 시점 폼 스냅샷 — 있으면 수정 화면에서 동일 폼 복원 */
+  formPayload?: DirectCaseFormPayload;
 };

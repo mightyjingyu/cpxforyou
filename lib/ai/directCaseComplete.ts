@@ -88,7 +88,7 @@ export async function completeDirectCase(payload: DirectCaseFormPayload): Promis
   const client = getOpenAIClient();
   const payloadJson = JSON.stringify(payload, null, 2);
 
-  const prompt = `당신은 의과대학 CPX 케이스 설계자입니다. 사용자가 "직접 모드" 표로 일부만 채운 뒤, 나머지는 당신이 임상적으로 일관되게 보강해 완전한 CaseSpec JSON을 만듭니다.
+  const prompt = `당신은 의과대학 CPX 케이스 설계자입니다. 사용자가 "Custom Mode" 표로 일부만 채운 뒤, 나머지는 당신이 임상적으로 일관되게 보강해 완전한 CaseSpec JSON을 만듭니다.
 
 ## 절대 규칙
 1) scope.history === true 인 경우: historyBlocks에 적힌 내용은 **절대 변경하지 말고** 아래 **의미 태그·mergeHint**에 따라 symptom_details·history에 녹여 넣으세요. 라벨은 **OLD COEX(1~5)·Character/Associated/Factor/Exam(6~9)·배경 병력(10~15)**에 대응합니다. 환자는 의사가 다른 순서로 물어도 같은 사실을 유지합니다.
@@ -129,7 +129,7 @@ JSON만 출력하세요.`;
     });
 
     const content = response.choices[0]?.message?.content;
-    if (!content) throw new Error('직접 모드 케이스 보강 실패(빈 응답)');
+    if (!content) throw new Error('Custom Mode 케이스 보강 실패(빈 응답)');
 
     let spec: CaseSpec;
     try {
@@ -179,5 +179,5 @@ JSON만 출력하세요.`;
     lastError = validation.failures.join('; ');
   }
 
-  throw new Error(lastError || '직접 모드 케이스 검증 실패');
+  throw new Error(lastError || 'Custom Mode 케이스 검증 실패');
 }

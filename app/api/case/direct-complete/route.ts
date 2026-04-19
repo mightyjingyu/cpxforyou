@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     }
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
       return NextResponse.json(
-        { error: 'OpenAI API 키가 설정되지 않아 직접 모드 케이스를 완성할 수 없습니다.' },
+        { error: 'OpenAI API 키가 설정되지 않아 Custom Mode 케이스를 완성할 수 없습니다.' },
         { status: 503 }
       );
     }
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ caseSpec });
   } catch (e) {
     console.error('direct-complete error:', e);
-    const msg = e instanceof Error ? e.message : '직접 모드 케이스 생성 실패';
+    const msg = e instanceof Error ? e.message : 'Custom Mode 케이스 생성 실패';
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

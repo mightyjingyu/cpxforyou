@@ -27,7 +27,7 @@ function formatDirectCaseFacts(spec: CaseSpec): string {
 `.trim();
 }
 
-/** 직접 모드: 표·보강된 전체 사실을 시스템 프롬프트에 포함 */
+/** Custom Mode: 표·보강된 전체 사실을 시스템 프롬프트에 포함 */
 export function buildDirectHybridSystemPrompt(
   caseSpec: CaseSpec,
   difficulty: 'easy' | 'normal' | 'hard',
@@ -47,11 +47,11 @@ export function buildDirectHybridSystemPrompt(
   const facts = formatDirectCaseFacts(caseSpec);
   return `${base}
 
-[직접모드 — 환자 사실 시트(고정)]
-의사가 묻는 순서와 무관하게 아래 사실을 유지하세요. 직접 모드 표의 O/L/D/Co/Ex/… 는 **OLD COEX·Character/Associated/Factor/Exam·배경 병력** 등 임상 의미 태그에 해당하며, 이미 symptom_details·history 필드에 녹여 둔 값입니다.
+[Custom Mode — 환자 사실 시트(고정)]
+의사가 묻는 순서와 무관하게 아래 사실을 유지하세요. Custom Mode 표의 O/L/D/Co/Ex/… 는 **OLD COEX·Character/Associated/Factor/Exam·배경 병력** 등 임상 의미 태그에 해당하며, 이미 symptom_details·history 필드에 녹여 둔 값입니다.
 ${facts}
 
-[직접모드 — 미명시 정보 규칙]
+[Custom Mode — 미명시 정보 규칙]
 위 사실 시트에 없는 세부를 물으면 "잘 모르겠어요"이거나, 1~3순위 예상 진단(${caseSpec.answer_key.diagnosis_ranked.join(', ')})에 흔히 동반될 수 있는 정도로만 답하고 그 밖은 모른다고 하세요. 시트 사실과 모순되면 안 됩니다.
 `.trim();
 }

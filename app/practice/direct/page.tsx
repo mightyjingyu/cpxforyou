@@ -1,19 +1,126 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import { useSessionStore } from '@/store/sessionStore';
 import { CLINICAL_CATEGORIES, CLINICAL_PRESENTATIONS } from '@/lib/ai/personaTemplate';
-import type { DirectCaseFormPayload, DirectCaseScope } from '@/types/directCase';
+import type { DirectCaseFormPayload, DirectCasePersisted, DirectCaseScope } from '@/types/directCase';
 import type { CaseSpec, Difficulty, Friendliness, TimerMode } from '@/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { HISTORY_BLOCK_SEMANTICS, HISTORY_KEYS } from '@/lib/ai/historyBlockSemantics';
 
-export default function DirectModePage() {
+function applyFormPayloadToState(
+  entry: DirectCasePersisted,
+  p: DirectCaseFormPayload,
+  setters: {
+    setTitle: (v: string) => void;
+    setSystemCategory: (v: string) => void;
+    setChiefComplaint: (v: string) => void;
+    setChiefComplaintCustom: (v: string) => void;
+    setPatientName: (v: string) => void;
+    setPatientAge: (v: string) => void;
+    setPatientGender: (v: '남' | '여') => void;
+    setChiefComplaintText: (v: string) => void;
+    setScope: (v: DirectCaseScope) => void;
+    setHistoryBlocks: (v: Record<string, string>) => void;
+    setVitals: (v: { bp: string; hr: string; rr: string; temp: string }) => void;
+    setPhysicalExtra: (v: string) => void;
+    setDx1: (v: string) => void;
+    setDx2: (v: string) => void;
+    setDx3: (v: string) => void;
+    setSpecialQuestion: (v: string) => void;
+    setSpecialOther: (v: string) => void;
+    setDifficulty: (v: Difficulty) => void;
+    setFriendliness: (v: Friendliness) => void;
+  }
+) {
+  setters.setTitle(entry.title);
+  setters.setSystemCategory(p.systemCategory);
+  const cc = p.chiefComplaint;
+  const ccListed = CLINICAL_PRESENTATIONS.includes(cc);
+  if (ccListed) {
+    setters.setChiefComplaint(cc);
+    setters.setChiefComplaintCustom('');
+  } else {
+    setters.setChiefComplaint(CLINICAL_PRESENTATIONS[0] || '');
+    setters.setChiefComplaintCustom(cc);
+  }
+  setters.setPatientName(p.patientName);
+  setters.setPatientAge(String(p.patientAge));
+  setters.setPatientGender(p.patientGender);
+  setters.setChiefComplaintText(p.chiefComplaintText);
+  setters.setScope(p.scope);
+  setters.setHistoryBlocks(p.historyBlocks ? { ...p.historyBlocks } : {});
+  if (p.vitals) {
+    setters.setVitals({
+      bp: p.vitals.bp,
+      hr: p.vitals.hr,
+      rr: p.vitals.rr,
+      temp: p.vitals.temp,
+    });
+  } else {
+    setters.setVitals({ bp: '', hr: '', rr: '', temp: '' });
+  }
+  setters.setPhysicalExtra(p.physicalExtraLines?.join('\n') ?? '');
+  if (p.diagnosisRanked) {
+    setters.setDx1(p.diagnosisRanked[0]);
+    setters.setDx2(p.diagnosisRanked[1]);
+    setters.setDx3(p.diagnosisRanked[2]);
+  } else {
+    setters.setDx1('');
+    setters.setDx2('');
+    setters.setDx3('');
+  }
+  setters.setSpecialQuestion(p.specialQuestion ?? '');
+  setters.setSpecialOther(p.specialOther ?? '');
+  setters.setDifficulty(p.difficulty);
+  setters.setFriendliness(p.friendliness ?? 'normal');
+}
+
+function fallbackHydrateFromPersisted(entry: DirectCasePersisted) {
+  const spec = entry.caseSpec;
+  const cc = entry.chiefComplaint.trim();
+  const ccListed = CLINICAL_PRESENTATIONS.includes(cc);
+  return {
+    title: entry.title,
+    systemCategory: entry.systemCategory,
+    chiefComplaint: ccListed ? cc : CLINICAL_PRESENTATIONS[0] || '',
+    chiefComplaintCustom: ccListed ? '' : cc,
+    patientName: spec.patient?.name ?? '',
+    patientAge: String(spec.patient?.age ?? 32),
+    patientGender: (spec.patient?.gender === '여' ? '여' : '남') as '남' | '여',
+    chiefComplaintText: spec.chief_complaint_display || spec.opening_line || '',
+    scope: {
+      history: true,
+      physical: true,
+      diagnosisPlan: true,
+    } satisfies DirectCaseScope,
+    historyBlocks: {} as Record<string, string>,
+    vitals: {
+      bp: spec.vitals?.bp != null ? String(spec.vitals.bp) : '',
+      hr: spec.vitals?.hr != null ? String(spec.vitals.hr) : '',
+      rr: spec.vitals?.rr != null ? String(spec.vitals.rr) : '',
+      temp: spec.vitals?.temp != null ? String(spec.vitals.temp) : '',
+    },
+    physicalExtra: spec.physical_exam_findings || '',
+    dx1: spec.answer_key?.diagnosis_ranked?.[0] ?? '',
+    dx2: spec.answer_key?.diagnosis_ranked?.[1] ?? '',
+    dx3: spec.answer_key?.diagnosis_ranked?.[2] ?? '',
+    specialQuestion: '',
+    specialOther: '',
+    difficulty: spec.difficulty,
+    friendliness: 'normal' as Friendliness,
+  };
+}
+
+function DirectModePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editId = searchParams.get('id')?.trim() || undefined;
   const { user, authLoading } = useAuth();
-  const { startSession, saveDirectCase } = useSessionStore();
+  const { startSession, saveDirectCase, directCases } = useSessionStore();
+  const hydratedForId = useRef<string | null>(null);
 
   const [title, setTitle] = useState('');
   const [systemCategory, setSystemCategory] = useState(Object.keys(CLINICAL_CATEGORIES)[0] || '');
@@ -42,6 +149,91 @@ export default function DirectModePage() {
   const [timerMode, setTimerMode] = useState<TimerMode>('countdown');
   const [interactionMode, setInteractionMode] = useState<'voice' | 'text'>('voice');
   const [loading, setLoading] = useState(false);
+  const [storeReady, setStoreReady] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+  /** 편집 진입 시 hydrate 완료 전까지 메인 폼 숨김 */
+  const [editFormReady, setEditFormReady] = useState(!editId);
+
+  const existing = useMemo(
+    () => (editId ? (directCases ?? []).find((d) => d.id === editId) : undefined),
+    [editId, directCases]
+  );
+
+  useEffect(() => {
+    if (useSessionStore.persist.hasHydrated()) {
+      setStoreReady(true);
+      return;
+    }
+    return useSessionStore.persist.onFinishHydration(() => setStoreReady(true));
+  }, []);
+
+  useEffect(() => {
+    hydratedForId.current = null;
+    if (!editId) setEditFormReady(true);
+    else setEditFormReady(false);
+  }, [editId]);
+
+  useEffect(() => {
+    if (existing) {
+      setNotFound(false);
+      return;
+    }
+    if (!editId || !storeReady) return;
+    const t = setTimeout(() => setNotFound(true), 2000);
+    return () => clearTimeout(t);
+  }, [editId, existing, storeReady]);
+
+  useEffect(() => {
+    if (!editId || !existing) return;
+    if (hydratedForId.current === editId) return;
+    hydratedForId.current = editId;
+
+    if (existing.formPayload) {
+      applyFormPayloadToState(existing, existing.formPayload, {
+        setTitle,
+        setSystemCategory,
+        setChiefComplaint,
+        setChiefComplaintCustom,
+        setPatientName,
+        setPatientAge,
+        setPatientGender,
+        setChiefComplaintText,
+        setScope,
+        setHistoryBlocks,
+        setVitals,
+        setPhysicalExtra,
+        setDx1,
+        setDx2,
+        setDx3,
+        setSpecialQuestion,
+        setSpecialOther,
+        setDifficulty,
+        setFriendliness,
+      });
+    } else {
+      const f = fallbackHydrateFromPersisted(existing);
+      setTitle(f.title);
+      setSystemCategory(f.systemCategory);
+      setChiefComplaint(f.chiefComplaint);
+      setChiefComplaintCustom(f.chiefComplaintCustom);
+      setPatientName(f.patientName);
+      setPatientAge(f.patientAge);
+      setPatientGender(f.patientGender);
+      setChiefComplaintText(f.chiefComplaintText);
+      setScope(f.scope);
+      setHistoryBlocks(f.historyBlocks);
+      setVitals(f.vitals);
+      setPhysicalExtra(f.physicalExtra);
+      setDx1(f.dx1);
+      setDx2(f.dx2);
+      setDx3(f.dx3);
+      setSpecialQuestion(f.specialQuestion);
+      setSpecialOther(f.specialOther);
+      setDifficulty(f.difficulty);
+      setFriendliness(f.friendliness);
+    }
+    setEditFormReady(true);
+  }, [editId, existing]);
 
   const setHistoryField = useCallback((key: string, value: string) => {
     setHistoryBlocks((prev) => ({ ...prev, [key]: value }));
@@ -120,13 +312,16 @@ export default function DirectModePage() {
     setLoading(true);
     try {
       const caseSpec = await runComplete();
+      const fp = buildPayload();
       await saveDirectCase({
+        ...(editId ? { id: editId } : {}),
         title: title.trim() || caseSpec.chief_complaint_display || caseSpec.clinical_presentation,
         systemCategory,
         chiefComplaint: resolvedChiefComplaint,
         caseSpec,
+        formPayload: fp,
       });
-      alert('저장했습니다. Practice에서 직접 모드로 불러올 수 있습니다.');
+      alert('저장했습니다. Practice의 Custom Mode에서 불러올 수 있습니다.');
     } catch (e) {
       console.error(e);
       alert(e instanceof Error ? e.message : '저장 실패');
@@ -139,6 +334,17 @@ export default function DirectModePage() {
     setLoading(true);
     try {
       const caseSpec = await runComplete();
+      const fp = buildPayload();
+      if (editId) {
+        await saveDirectCase({
+          id: editId,
+          title: title.trim() || caseSpec.chief_complaint_display || caseSpec.clinical_presentation,
+          systemCategory,
+          chiefComplaint: resolvedChiefComplaint,
+          caseSpec,
+          formPayload: fp,
+        });
+      }
       const sessionId = uuidv4();
       const reg = await fetch('/api/session/register', {
         method: 'POST',
@@ -167,6 +373,29 @@ export default function DirectModePage() {
 
   if (!authLoading && !user) return null;
 
+  if (editId && !notFound && (!existing || !editFormReady)) {
+    return (
+      <main className="min-h-screen bg-white flex items-center justify-center font-sans">
+        <p className="text-sm text-black/60">증례를 불러오는 중…</p>
+      </main>
+    );
+  }
+
+  if (editId && storeReady && !existing && notFound) {
+    return (
+      <main className="min-h-screen bg-white flex flex-col items-center justify-center gap-4 font-sans px-6">
+        <p className="text-sm text-black/70 text-center">저장된 증례를 찾을 수 없습니다. 목록에서 다시 선택해 주세요.</p>
+        <button
+          type="button"
+          onClick={() => router.push('/practice')}
+          className="px-5 py-2.5 rounded-full border border-black bg-black text-white text-xs font-bold uppercase tracking-widest"
+        >
+          Practice로
+        </button>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-white relative flex flex-col font-sans selection:bg-black selection:text-white">
       <div
@@ -189,13 +418,16 @@ export default function DirectModePage() {
             >
               ← Practice
             </button>
-            <h1 className="text-xs font-black tracking-widest uppercase">직접 모드</h1>
+            <h1 className="text-xs font-black tracking-widest uppercase">Custom Mode</h1>
             <div className="w-16" />
           </div>
         </header>
 
         <div className="flex-1 p-6 space-y-8 pb-24 overflow-y-auto">
           <p className="text-sm text-black/70 leading-relaxed">
+            {editId ? (
+              <span className="font-semibold text-black">수정 중 · </span>
+            ) : null}
             체크한 항목만 표에 직접 입력하고, 체크하지 않은 항목은 AI가 같은 맥락으로 채웁니다. 완성 후 저장하거나 바로 시험을 시작할 수 있습니다.
           </p>
 
@@ -290,7 +522,7 @@ export default function DirectModePage() {
               />
             </div>
             <div className="flex flex-wrap gap-4 pt-2 border-t border-black/10">
-              <span className="text-[10px] font-bold text-black/50 w-full">지침 (직접 입력할 블록)</span>
+              <span className="text-[10px] font-bold text-black/50 w-full">지침 (Custom Mode에서 입력할 블록)</span>
               {(
                 [
                   ['history', '병력청취'],
@@ -479,7 +711,7 @@ export default function DirectModePage() {
               onClick={() => void handleSaveOnly()}
               className="flex-1 py-4 rounded-2xl border border-black text-sm font-bold hover:bg-black/5 disabled:opacity-50"
             >
-              {loading ? '처리 중…' : '케이스 완성 후 저장만'}
+              {loading ? '처리 중…' : editId ? '케이스 완성 후 변경 저장' : '케이스 완성 후 저장만'}
             </button>
             <button
               type="button"
@@ -493,5 +725,19 @@ export default function DirectModePage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function DirectModePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-white flex items-center justify-center font-sans">
+          <p className="text-sm text-black/60">로딩 중…</p>
+        </main>
+      }
+    >
+      <DirectModePageContent />
+    </Suspense>
   );
 }

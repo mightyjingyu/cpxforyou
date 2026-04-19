@@ -14,7 +14,7 @@ export type MemoTemplatePersisted = {
 export type UserSettingsDoc = {
   examTimeDeductionSeconds: number;
   memoTemplates: MemoTemplatePersisted[];
-  /** 직접 모드로 저장한 완성 케이스 */
+  /** Custom Mode로 저장한 완성 케이스 */
   directCases?: DirectCasePersisted[];
   /** 진료 중 메모 패널 초안 — 로그인 시 클라우드에 동기화되어 기기 간 유지 */
   draftMemoContent?: string;

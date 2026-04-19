@@ -13,7 +13,7 @@ import { getFirebaseAuth } from '@/lib/firebase/client';
 import { saveUserSession, listUserSessions } from '@/lib/firebase/userSessions';
 import { readMemoLocalBackup, writeMemoLocalBackup } from '@/lib/memoLocalBackup';
 import { loadUserSettings, saveUserSettings } from '@/lib/firebase/userSettingsDoc';
-import type { DirectCasePersisted } from '@/types/directCase';
+import type { DirectCaseFormPayload, DirectCasePersisted } from '@/types/directCase';
 
 const DEFAULT_COUNTDOWN_SECONDS = 720;
 
@@ -57,7 +57,7 @@ interface SessionState {
     clinicalPresentation?: string;
     updatedAt: number;
   }>;
-  /** 직접 모드 저장 증례 (Firestore 동기화) */
+  /** Custom Mode 저장 증례 (Firestore 동기화) */
   directCases: DirectCasePersisted[];
   cloudSessionSyncQueue: CloudSessionRetryItem[];
 
@@ -99,10 +99,13 @@ interface SessionState {
   ) => void;
   applyMemoTemplate: (templateId: string) => void;
   saveDirectCase: (payload: {
+    /** 있으면 해당 id 증례를 덮어씀 */
+    id?: string;
     title: string;
     systemCategory: string;
     chiefComplaint: string;
     caseSpec: CaseSpec;
+    formPayload?: DirectCaseFormPayload;
   }) => Promise<string>;
   removeDirectCase: (id: string) => Promise<boolean>;
   reset: () => void;
@@ -165,7 +168,7 @@ function mergeDirectCasesByUpdatedAt(...lists: DirectCasePersisted[][]): DirectC
     .slice(0, 200);
 }
 
-/** zustand persist가 아직 rehydrate 전이어도 디스크에 있는 직접 증례를 읽습니다 */
+/** zustand persist가 아직 rehydrate 전이어도 디스크에 있는 Custom Mode 증례를 읽습니다 */
 function readPersistedDirectCasesFromDisk(uid: string): DirectCasePersisted[] {
   if (typeof window === 'undefined') return [];
   try {
@@ -522,7 +525,7 @@ export const useSessionStore = create<SessionState>()(
               memoContent: nextMemo,
             };
           });
-          // 병합 결과를 Firestore에 반영해 다른 기기·다음 로드에서도 유지 (직접 증례 유실 방지)
+          // 병합 결과를 Firestore에 반영해 다른 기기·다음 로드에서도 유지 (Custom Mode 증례 유실 방지)
           await get().syncUserSettingsToCloud();
         } catch (e) {
           console.error('loadUserDataFromCloud failed:', e);
@@ -617,9 +620,11 @@ export const useSessionStore = create<SessionState>()(
         scheduleDraftMemoSync();
       },
 
-      saveDirectCase: async ({ title, systemCategory, chiefComplaint, caseSpec }) => {
-        const id = crypto.randomUUID();
+      saveDirectCase: async ({ id: existingId, title, systemCategory, chiefComplaint, caseSpec, formPayload }) => {
+        const id = existingId?.trim() || crypto.randomUUID();
         const now = Date.now();
+        const prev = get().directCases?.find((d) => d.id === id);
+        const resolvedForm = formPayload ?? prev?.formPayload;
         const entry: DirectCasePersisted = {
           id,
           title: title.trim() || '제목 없음',
@@ -627,6 +632,7 @@ export const useSessionStore = create<SessionState>()(
           chiefComplaint: chiefComplaint.trim(),
           caseSpec,
           updatedAt: now,
+          ...(resolvedForm ? { formPayload: resolvedForm } : {}),
         };
         set((state) => ({
           directCases: [entry, ...(state.directCases ?? []).filter((d) => d.id !== id)].slice(0, 200),

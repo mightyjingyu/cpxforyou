@@ -10,6 +10,7 @@ import type { DirectCasePersisted } from '@/types/directCase';
 import { useAuth } from '@/components/auth/AuthProvider';
 
 type PracticeMode = 'full_random' | 'category_random' | 'clinical_pick';
+type CustomPoolMode = 'full_random' | 'category_random' | 'clinical_pick';
 
 export default function PracticePage() {
   const router = useRouter();
@@ -23,16 +24,15 @@ export default function PracticePage() {
   const [friendliness, setFriendliness] = useState<Friendliness>('normal');
   const [timerMode, setTimerMode] = useState<TimerMode>('countdown');
   const [interactionMode, setInteractionMode] = useState<'voice' | 'text'>('voice');
-  const [directFilterSystem, setDirectFilterSystem] = useState<string>('ALL');
-  const [directFilterCC, setDirectFilterCC] = useState<string>('ALL');
+  const [customMode, setCustomMode] = useState<CustomPoolMode>('full_random');
+  const [customCategory, setCustomCategory] = useState<string>(Object.keys(CLINICAL_CATEGORIES)[0] || '');
+  const [customPresentation, setCustomPresentation] = useState<string>(CLINICAL_PRESENTATIONS[0] || '');
 
   useEffect(() => {
     if (!authLoading && !user) {
       router.replace('/');
     }
   }, [authLoading, user, router]);
-
-  if (!authLoading && !user) return null;
 
   const handleStartSession = async () => {
     setLoading(true);
@@ -97,18 +97,31 @@ export default function PracticePage() {
 
   const categoryPool = category ? CLINICAL_CATEGORIES[category] || [] : [];
 
-  const filteredDirectCases = useMemo(() => {
-    return (directCases ?? []).filter((d) => {
-      const sysOk = directFilterSystem === 'ALL' || d.systemCategory === directFilterSystem;
-      const ccOk = directFilterCC === 'ALL' || d.chiefComplaint === directFilterCC;
-      return sysOk && ccOk;
-    });
-  }, [directCases, directFilterSystem, directFilterCC]);
-
-  const directCcOptions = useMemo(() => {
-    const set = new Set((directCases ?? []).map((d) => d.chiefComplaint));
-    return Array.from(set).sort();
+  const customPresentationOptions = useMemo(() => {
+    const set = new Set<string>(CLINICAL_PRESENTATIONS);
+    for (const d of directCases ?? []) {
+      if (d.chiefComplaint?.trim()) set.add(d.chiefComplaint.trim());
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'ko'));
   }, [directCases]);
+
+  useEffect(() => {
+    if (customPresentationOptions.length === 0) return;
+    if (!customPresentationOptions.includes(customPresentation)) {
+      setCustomPresentation(customPresentationOptions[0]!);
+    }
+  }, [customPresentationOptions, customPresentation]);
+
+  const customCategoryPool = customCategory ? CLINICAL_CATEGORIES[customCategory] || [] : [];
+
+  const filteredDirectCases = useMemo(() => {
+    const all = directCases ?? [];
+    if (customMode === 'full_random') return all;
+    if (customMode === 'category_random') {
+      return all.filter((d) => d.systemCategory === customCategory);
+    }
+    return all.filter((d) => d.chiefComplaint === customPresentation);
+  }, [directCases, customMode, customCategory, customPresentation]);
 
   const handleStartDirectSaved = async (entry: DirectCasePersisted) => {
     setLoading(true);
@@ -139,6 +152,15 @@ export default function PracticePage() {
     }
   };
 
+  const handleCustomRandomStart = async () => {
+    const pool = filteredDirectCases;
+    if (pool.length === 0) return;
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+    await handleStartDirectSaved(picked);
+  };
+
+  if (!authLoading && !user) return null;
+
   return (
     <main className="min-h-screen bg-white relative flex flex-col font-sans selection:bg-black selection:text-white">
       {/* Background Grid Pattern */}
@@ -166,6 +188,15 @@ export default function PracticePage() {
         </header>
 
         <div className="flex-1 p-6 w-full max-w-4xl mx-auto space-y-8 mt-6">
+          <div className="relative z-10 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-widest text-black">Generative Mode</h2>
+              <p className="text-xs text-black/55 mt-1 max-w-md">
+                AI가 임상 프롬프트로 새 증례를 생성합니다.
+              </p>
+            </div>
+          </div>
+
           <section className="grid md:grid-cols-3 gap-4">
             {[
               { key: 'full_random', title: '완전 랜덤', desc: '임상 + 난이도 모두 랜덤' },
@@ -359,13 +390,13 @@ export default function PracticePage() {
             </div>
           </section>
 
-          <section className="rounded-3xl border border-black glass p-6 space-y-4 relative overflow-hidden">
+          <section className="rounded-3xl border border-black glass p-6 space-y-5 relative overflow-hidden">
             <div className="absolute inset-0 border border-white/60 rounded-3xl pointer-events-none" />
             <div className="relative z-10 flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h2 className="text-sm font-black uppercase tracking-widest text-black">직접 모드</h2>
+                <h2 className="text-sm font-black uppercase tracking-widest text-black">Custom Mode</h2>
                 <p className="text-xs text-black/55 mt-1 max-w-md">
-                  표로 만든 증례를 저장해 두었다가, 계통·C.C.로 걸러 시험만 볼 수 있습니다.
+                  표로 만든 증례를 저장해 두고, Generative Mode와 같은 방식으로 랜덤·필터 연습을 할 수 있습니다.
                 </p>
               </div>
               <button
@@ -376,65 +407,149 @@ export default function PracticePage() {
                 새 증례 만들기
               </button>
             </div>
-            <div className="relative z-10 grid sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] font-black text-black/50 uppercase tracking-widest">계통 필터</label>
-                <select
-                  value={directFilterSystem}
-                  onChange={(e) => setDirectFilterSystem(e.target.value)}
-                  className="mt-1 w-full rounded-2xl border border-black px-3 py-2 text-sm bg-white/70"
+
+            <div className="relative z-10 grid md:grid-cols-3 gap-3">
+              {(
+                [
+                  { key: 'full_random' as const, title: '완전 랜덤', desc: '저장된 증례 전체에서 랜덤' },
+                  { key: 'category_random' as const, title: '카테고리 랜덤', desc: '계통(카테고리)별로 필터 후 랜덤' },
+                  { key: 'clinical_pick' as const, title: '임상 선택', desc: 'C.C.(임상표현)별로 필터 후 랜덤' },
+                ] as const
+              ).map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setCustomMode(item.key)}
+                  className={`relative text-left rounded-2xl border transition-all duration-300 p-4 flex flex-col justify-center
+                    ${
+                      customMode === item.key
+                        ? 'border-black bg-black/5 backdrop-blur-xl shadow-md'
+                        : 'border-black/20 bg-white/40 hover:bg-white/70 hover:border-black/50 backdrop-blur-md'
+                    }`}
                 >
-                  <option value="ALL">전체</option>
-                  {Object.keys(CLINICAL_CATEGORIES).map((k) => (
-                    <option key={k} value={k}>
-                      {k}
+                  {customMode === item.key && (
+                    <div className="absolute top-3 right-3 w-1.5 h-1.5 rounded-full bg-black" />
+                  )}
+                  <p className="text-sm font-black text-black mb-1 uppercase tracking-tight">{item.title}</p>
+                  <p className="text-[10px] font-semibold text-black/55 leading-relaxed">{item.desc}</p>
+                </button>
+              ))}
+            </div>
+
+            {customMode === 'category_random' && (
+              <div className="relative z-10 space-y-2">
+                <label className="text-[10px] font-black text-black uppercase tracking-widest">카테고리</label>
+                <select
+                  value={customCategory}
+                  onChange={(e) => setCustomCategory(e.target.value)}
+                  className="w-full rounded-2xl border border-black px-3 py-2.5 text-sm bg-white/70"
+                >
+                  {Object.keys(CLINICAL_CATEGORIES).map((c) => (
+                    <option key={c} value={c}>
+                      {c}
                     </option>
                   ))}
                 </select>
+                <p className="text-[10px] text-black/45 leading-relaxed">
+                  포함 임상: {customCategoryPool.length > 0 ? customCategoryPool.join(', ') : '해당 없음'}
+                </p>
               </div>
-              <div>
-                <label className="text-[10px] font-black text-black/50 uppercase tracking-widest">C.C. 필터</label>
+            )}
+
+            {customMode === 'clinical_pick' && (
+              <div className="relative z-10 space-y-2">
+                <label className="text-[10px] font-black text-black uppercase tracking-widest">임상 (C.C.)</label>
                 <select
-                  value={directFilterCC}
-                  onChange={(e) => setDirectFilterCC(e.target.value)}
-                  className="mt-1 w-full rounded-2xl border border-black px-3 py-2 text-sm bg-white/70"
+                  value={customPresentation}
+                  onChange={(e) => setCustomPresentation(e.target.value)}
+                  className="w-full rounded-2xl border border-black px-3 py-2.5 text-sm bg-white/70"
                 >
-                  <option value="ALL">전체</option>
-                  {directCcOptions.map((c) => (
+                  {customPresentationOptions.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
                   ))}
                 </select>
               </div>
+            )}
+
+            <div className="relative z-10 flex flex-wrap items-center gap-2 text-[10px] text-black/50">
+              <span className="font-bold text-black/60">
+                해당 목록 {filteredDirectCases.length}개
+              </span>
+              {customMode === 'full_random' && (directCases ?? []).length === 0 && (
+                <span>· 저장된 Custom 증례가 없습니다.</span>
+              )}
+              {customMode === 'category_random' && filteredDirectCases.length === 0 && (directCases ?? []).length > 0 && (
+                <span>· 이 카테고리에 해당하는 증례가 없습니다.</span>
+              )}
+              {customMode === 'clinical_pick' && filteredDirectCases.length === 0 && (directCases ?? []).length > 0 && (
+                <span>· 이 임상 표현과 일치하는 증례가 없습니다.</span>
+              )}
             </div>
-            {filteredDirectCases.length === 0 ? (
-              <p className="relative z-10 text-xs text-black/45">저장된 직접 증례가 없습니다. 새 증례 만들기에서 케이스를 완성하세요.</p>
+
+            <div className="relative z-10 pt-1">
+              <button
+                type="button"
+                disabled={loading || filteredDirectCases.length === 0}
+                onClick={() => void handleCustomRandomStart()}
+                className="w-full py-4 bg-black text-white rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    시작 중…
+                  </span>
+                ) : customMode === 'full_random' ? (
+                  '저장된 증례 중 랜덤으로 시작'
+                ) : customMode === 'category_random' ? (
+                  '이 카테고리에서 랜덤으로 시작'
+                ) : (
+                  '이 임상에서 랜덤으로 시작'
+                )}
+              </button>
+            </div>
+
+            {(directCases ?? []).length === 0 ? (
+              <p className="relative z-10 text-xs text-black/45">
+                저장된 Custom 증례가 없습니다. 새 증례 만들기에서 케이스를 완성하세요.
+              </p>
+            ) : filteredDirectCases.length === 0 ? (
+              <p className="relative z-10 text-xs text-black/45">위 조건에 맞는 증례가 없습니다. 카테고리·임상을 바꿔 보세요.</p>
             ) : (
-              <ul className="relative z-10 space-y-2 max-h-56 overflow-y-auto pr-1">
+              <ul className="relative z-10 space-y-2 max-h-64 overflow-y-auto pr-1">
                 {filteredDirectCases.map((d) => (
                   <li
                     key={d.id}
                     className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-black/15 bg-white/60 px-4 py-3"
                   >
-                    <div className="min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/practice/direct?id=${encodeURIComponent(d.id)}`)}
+                      className="min-w-0 text-left flex-1 hover:opacity-80 transition-opacity"
+                    >
                       <p className="text-sm font-bold text-black truncate">{d.title}</p>
                       <p className="text-[10px] text-black/45 font-medium">
                         {d.systemCategory} · {d.chiefComplaint}
                       </p>
-                    </div>
+                      <p className="text-[9px] text-black/35 mt-0.5">탭하여 수정 · 저장</p>
+                    </button>
                     <div className="flex gap-2 shrink-0">
                       <button
                         type="button"
                         disabled={loading}
-                        onClick={() => void handleStartDirectSaved(d)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleStartDirectSaved(d);
+                        }}
                         className="px-4 py-2 rounded-full bg-black text-white text-[10px] font-bold uppercase tracking-wider disabled:opacity-50"
                       >
                         이 증례로 시작
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           void (async () => {
                             if (!confirm('이 증례를 삭제할까요?')) return;
                             const ok = await removeDirectCase(d.id);

@@ -57,9 +57,9 @@ export interface AnswerKey {
 
 export interface CaseSpec {
   case_id: string;
-  /** 생성 경로: 직접 모드 하이브리드는 대화 프롬프트에 전체 사실 주입 */
+  /** 생성 경로: Custom Mode 하이브리드는 대화 프롬프트에 전체 사실 주입 */
   case_source?: 'generated' | 'direct_hybrid';
-  /** 직접 모드: 시험 시작 시 학생에게 보여줄 주호소(상황지침) 한 줄 */
+  /** Custom Mode: 시험 시작 시 학생에게 보여줄 주호소(상황지침) 한 줄 */
   chief_complaint_display?: string;
   clinical_presentation: string;
   difficulty: 'easy' | 'normal' | 'hard';
