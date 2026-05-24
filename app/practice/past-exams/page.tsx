@@ -10,7 +10,7 @@ import type { CaseSpec, Difficulty, Friendliness, TimerMode } from '@/types';
 import type { DirectCaseFormPayload, DirectCaseScope } from '@/types/directCase';
 import type { PastExam } from '@/types/pastExam';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { listPastExamsFromFirestore, savePastExam } from '@/lib/firebase/pastExams';
+import { listPastExamsFromFirestore, savePastExam, deletePastExam } from '@/lib/firebase/pastExams';
 
 function PastExamsContent() {
   const router = useRouter();
@@ -200,18 +200,18 @@ function PastExamsContent() {
       setChiefComplaintText(data.chiefComplaintText || '');
       setHistoryBlocks(data.historyBlocks || {});
       setVitals(data.vitals || { bp: '', hr: '', rr: '', temp: '' });
-      setPhysicalExtra(Array.isArray(data.physicalExtraLines) ? data.physicalExtraLines.join('\n') : '');
+      setPhysicalExtra(data.physicalExamFindings || (Array.isArray(data.physicalExtraLines) ? data.physicalExtraLines.join('\n') : ''));
       
       // Structured PE
-      setPeGeneral(data.peGeneral || '');
-      setPeHEENT(data.peHEENT || '');
-      setPeAbdomen(data.peAbdomen || '');
-      setPeExtremity(data.peExtremity || '');
+      setPeGeneral('');
+      setPeHEENT('');
+      setPeAbdomen('');
+      setPeExtremity('');
       
       // Management & education plans
       setManagementPlanTests(data.managementPlanTests || '');
       setManagementPlanTreatment(data.managementPlanTreatment || '');
-      setPatientEducation(data.patientEducation || '');
+      setPatientEducation('');
 
       if (Array.isArray(data.diagnosisRanked)) {
         setDx1(data.diagnosisRanked[0] || '');
@@ -263,13 +263,6 @@ function PastExamsContent() {
         difficulty: 'normal',
         specialQuestion: specialQuestion.trim() || undefined,
         specialOther: specialOther.trim() || undefined,
-        peHEENT: peHEENT.trim() || undefined,
-        peAbdomen: peAbdomen.trim() || undefined,
-        peExtremity: peExtremity.trim() || undefined,
-        peGeneral: peGeneral.trim() || undefined,
-        managementPlanTests: managementPlanTests.trim() || undefined,
-        managementPlanTreatment: managementPlanTreatment.trim() || undefined,
-        patientEducation: patientEducation.trim() || undefined,
       };
 
       if (vitals.bp || vitals.hr || vitals.rr || vitals.temp) {
@@ -307,9 +300,12 @@ function PastExamsContent() {
       const compData = await compRes.json();
       const caseSpec: CaseSpec = compData.caseSpec;
 
-      // Create new PastExam entry
-      const newExam: PastExam = {
-        id: crypto.randomUUID(),
+      const isEditing = !!viewingExam && !viewingExam.isPreMade;
+      const targetId = isEditing ? viewingExam.id : crypto.randomUUID();
+
+      // Create new/updated PastExam entry
+      const examData: PastExam = {
+        id: targetId,
         title: title.trim(),
         systemCategory,
         chiefComplaint: ccResolved,
@@ -317,14 +313,16 @@ function PastExamsContent() {
         updatedAt: Date.now(),
         formPayload: payload,
         authorId: user?.uid,
+        isPreMade: false,
       };
 
       // Save to global Firestore collection
-      await savePastExam(newExam);
-      alert('성공적으로 기출 문제 은행에 등록되었습니다!');
+      await savePastExam(examData);
+      alert(isEditing ? '성공적으로 수정되었습니다!' : '성공적으로 기출 문제 은행에 등록되었습니다!');
       
       // Reset form and close modal
       setRegisterOpen(false);
+      setViewingExam(null);
       // Reload list
       await loadExams();
     } catch (e) {
@@ -357,14 +355,23 @@ function PastExamsContent() {
         rr: payload.vitals?.rr ? String(payload.vitals.rr) : '',
         temp: payload.vitals?.temp ? String(payload.vitals.temp) : '',
       });
-      setPhysicalExtra(payload.physicalExtraLines?.join('\n') || '');
-      setPeGeneral(payload.peGeneral || '');
-      setPeHEENT(payload.peHEENT || '');
-      setPeAbdomen(payload.peAbdomen || '');
-      setPeExtremity(payload.peExtremity || '');
+      
+      let combinedPE = '';
+      if (payload.peGeneral?.trim()) combinedPE += `[General] ${payload.peGeneral.trim()}\n`;
+      if (payload.peHEENT?.trim()) combinedPE += `[HEENT] ${payload.peHEENT.trim()}\n`;
+      if (payload.peAbdomen?.trim()) combinedPE += `[Abdomen] ${payload.peAbdomen.trim()}\n`;
+      if (payload.peExtremity?.trim()) combinedPE += `[Extremity] ${payload.peExtremity.trim()}\n`;
+      if (payload.physicalExtraLines?.length) {
+        combinedPE += payload.physicalExtraLines.join('\n');
+      }
+      setPhysicalExtra(combinedPE.trim());
+      setPeGeneral('');
+      setPeHEENT('');
+      setPeAbdomen('');
+      setPeExtremity('');
       setManagementPlanTests(payload.managementPlanTests || '');
       setManagementPlanTreatment(payload.managementPlanTreatment || '');
-      setPatientEducation(payload.patientEducation || '');
+      setPatientEducation('');
 
       if (Array.isArray(payload.diagnosisRanked)) {
         setDx1(payload.diagnosisRanked[0] || '');
@@ -387,6 +394,9 @@ function PastExamsContent() {
 
       // Reconstruct historyBlocks
       const blocks: Record<string, string> = {};
+      if (spec.chief_complaint_display || spec.opening_line) {
+        blocks['주소'] = spec.chief_complaint_display || spec.opening_line || '';
+      }
       if (spec.symptom_details) {
         if (spec.symptom_details.onset) blocks['O'] = spec.symptom_details.onset;
         if (spec.symptom_details.location) blocks['L'] = spec.symptom_details.location;
@@ -423,11 +433,11 @@ function PastExamsContent() {
         temp: spec.vitals?.temp ? String(spec.vitals.temp) : '',
       });
 
-      setPeGeneral(spec.physical_exam_findings || '');
+      setPhysicalExtra(spec.physical_exam_findings || '');
+      setPeGeneral('');
       setPeHEENT('');
       setPeAbdomen('');
       setPeExtremity('');
-      setPhysicalExtra('');
 
       if (spec.answer_key?.diagnosis_ranked) {
         setDx1(spec.answer_key.diagnosis_ranked[0] || '');
@@ -441,12 +451,37 @@ function PastExamsContent() {
 
       setManagementPlanTests(spec.answer_key?.management_plan?.tests || '');
       setManagementPlanTreatment(spec.answer_key?.management_plan?.treatment || '');
-      setPatientEducation(spec.answer_key?.patient_education || '');
+      setPatientEducation('');
 
       setSpecialQuestion(spec.patient_concern || '');
       setSpecialOther(spec.personality || '');
     }
   }, []);
+
+  const handleDeleteExam = async () => {
+    if (!viewingExam) return;
+    if (viewingExam.isPreMade) {
+      alert('기본 탑재 기출은 삭제할 수 없습니다.');
+      return;
+    }
+    if (!confirm('정말로 이 기출을 삭제하시겠습니까?')) {
+      return;
+    }
+    
+    setSubmitting(true);
+    try {
+      await deletePastExam(viewingExam.id);
+      alert('성공적으로 삭제되었습니다.');
+      setViewingExam(null);
+      setRegisterOpen(false);
+      await loadExams();
+    } catch (e) {
+      console.error(e);
+      alert('삭제 중 오류가 발생했습니다.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleStartExam = async (exam: PastExam) => {
     setSubmitting(true);
@@ -489,7 +524,7 @@ function PastExamsContent() {
     await handleStartExam(randomPicked);
   };
 
-  const isReadOnly = !!viewingExam;
+  const isReadOnly = !!viewingExam && !!viewingExam.isPreMade;
 
   if (!authLoading && !user) return null;
 
@@ -562,7 +597,7 @@ function PastExamsContent() {
             <div className="bg-white border border-black rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col relative overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
               <div className="p-6 border-b border-black flex items-center justify-between bg-white sticky top-0 z-10">
                 <h2 className="text-lg font-black uppercase tracking-tight">
-                  {isReadOnly ? '기출 증례 상세 보기 (수정 불가)' : '새 기출 증례 등록'}
+                  {isReadOnly ? '기출 증례 상세 보기 (수정 불가)' : viewingExam ? '기출 증례 수정 및 삭제' : '새 기출 증례 등록'}
                 </h2>
                 <button
                   onClick={() => {
@@ -610,6 +645,7 @@ function PastExamsContent() {
                   {/* Form editing block */}
                   {!ocrLoading && (
                     <div className={`${isReadOnly ? 'md:col-span-3' : 'md:col-span-2'} space-y-6`}>
+                      {/* 1. 기출 증례 정보 */}
                       <section className="space-y-4 rounded-2xl border border-black p-4 bg-white/50">
                         <h3 className="text-xs font-black uppercase tracking-widest">기출 증례 정보</h3>
                         <div className="space-y-2">
@@ -667,6 +703,7 @@ function PastExamsContent() {
                         </div>
                       </section>
 
+                      {/* 2. 환자 기본 사항 & 상황 지침 */}
                       <section className="space-y-4 rounded-2xl border border-black p-4 bg-white/50">
                         <h3 className="text-xs font-black uppercase tracking-widest">환자 기본 사항 & 상황 지침</h3>
                         <div className="grid sm:grid-cols-3 gap-3">
@@ -724,6 +761,72 @@ function PastExamsContent() {
                         </div>
                       </section>
 
+                      {/* 3. 예상 감별 진단 & 진료 계획 (Answer Key) */}
+                      <section className="space-y-4 rounded-2xl border border-black p-4 bg-white/50">
+                        <h3 className="text-xs font-black uppercase tracking-widest">예상 감별 진단 & 진료 계획 (Answer Key)</h3>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-[10px] font-bold text-black/50 block">예상 감별 진단 1~3순위</label>
+                            <div className="grid gap-2 mt-1">
+                              <input
+                                value={dx1}
+                                onChange={(e) => setDx1(e.target.value)}
+                                placeholder="1순위 (주진단)"
+                                readOnly={isReadOnly}
+                                className={`rounded-xl border border-black px-3 py-2 text-sm outline-none ${
+                                  isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
+                                }`}
+                              />
+                              <input
+                                value={dx2}
+                                onChange={(e) => setDx2(e.target.value)}
+                                placeholder="2순위"
+                                readOnly={isReadOnly}
+                                className={`rounded-xl border border-black px-3 py-2 text-sm outline-none ${
+                                  isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
+                                }`}
+                              />
+                              <input
+                                value={dx3}
+                                onChange={(e) => setDx3(e.target.value)}
+                                placeholder="3순위"
+                                readOnly={isReadOnly}
+                                className={`rounded-xl border border-black px-3 py-2 text-sm outline-none ${
+                                  isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
+                                }`}
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-black/50 block">필요한 검사 계획 3가지</label>
+                            <textarea
+                              value={managementPlanTests}
+                              onChange={(e) => setManagementPlanTests(e.target.value)}
+                              rows={2}
+                              placeholder="예: 1. 요역동학 검사\n2. 골반초음파 및 CT 영상검사\n3. 소변(배양)검사"
+                              readOnly={isReadOnly}
+                              className={`mt-1 w-full rounded-xl border border-black/30 px-3 py-2 text-sm outline-none resize-y ${
+                                isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-black/50 block">필요한 치료 계획 3가지</label>
+                            <textarea
+                              value={managementPlanTreatment}
+                              onChange={(e) => setManagementPlanTreatment(e.target.value)}
+                              rows={2}
+                              placeholder="예: 1. 생활 습관 교육\n2. 케겔 운동, 방광 및 배뇨 훈련\n3. 약물 치료"
+                              readOnly={isReadOnly}
+                              className={`mt-1 w-full rounded-xl border border-black/30 px-3 py-2 text-sm outline-none resize-y ${
+                                isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      </section>
+
+                      {/* 4. 병력 사항 (OLD COEX 등) */}
                       <section className="space-y-4 rounded-2xl border border-black p-4 bg-white/50">
                         <h3 className="text-xs font-black uppercase tracking-widest">병력 사항 (OLD COEX 등)</h3>
                         <div className="grid gap-3">
@@ -735,14 +838,15 @@ function PastExamsContent() {
                                   <span className="text-[10px] font-bold text-black/50">[{key}]</span>
                                   <span className="text-[9px] text-black/40">{sem.ko} ({sem.en})</span>
                                 </div>
-                                <input
+                                <textarea
                                   value={historyBlocks[key] ?? ''}
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     setHistoryBlocks((prev) => ({ ...prev, [key]: val }));
                                   }}
+                                  rows={2}
                                   readOnly={isReadOnly}
-                                  className={`mt-1 w-full rounded-xl border border-black/30 px-3 py-2 text-sm outline-none ${
+                                  className={`mt-1 w-full rounded-xl border border-black/30 px-3 py-2 text-sm outline-none resize-y ${
                                     isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
                                   }`}
                                 />
@@ -752,6 +856,7 @@ function PastExamsContent() {
                         </div>
                       </section>
 
+                      {/* 5. 신체 진찰 & 활력 징후 */}
                       <section className="space-y-4 rounded-2xl border border-black p-4 bg-white/50">
                         <h3 className="text-xs font-black uppercase tracking-widest">신체 진찰 & 활력 징후</h3>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -779,60 +884,12 @@ function PastExamsContent() {
                         </div>
                         <div className="grid gap-3">
                           <div>
-                            <label className="text-[10px] font-bold text-black/50 block">General (전신)</label>
-                            <input
-                              value={peGeneral}
-                              onChange={(e) => setPeGeneral(e.target.value)}
-                              placeholder="예: V/S : stable"
-                              readOnly={isReadOnly}
-                              className={`mt-1 w-full rounded-xl border border-black/30 px-3 py-2 text-sm outline-none ${
-                                isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
-                              }`}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] font-bold text-black/50 block">HEENT (머리, 눈, 귀, 코, 목)</label>
-                            <input
-                              value={peHEENT}
-                              onChange={(e) => setPeHEENT(e.target.value)}
-                              placeholder="예: 눈(-), 구강(-), 갑상샘/림프절(-/-)"
-                              readOnly={isReadOnly}
-                              className={`mt-1 w-full rounded-xl border border-black/30 px-3 py-2 text-sm outline-none ${
-                                isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
-                              }`}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] font-bold text-black/50 block">Abdomen (복부)</label>
-                            <input
-                              value={peAbdomen}
-                              onChange={(e) => setPeAbdomen(e.target.value)}
-                              placeholder="예: Suprapubic Td/rTd(-/-), CVAT(-)"
-                              readOnly={isReadOnly}
-                              className={`mt-1 w-full rounded-xl border border-black/30 px-3 py-2 text-sm outline-none ${
-                                isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
-                              }`}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] font-bold text-black/50 block">Extremity (사지)</label>
-                            <input
-                              value={peExtremity}
-                              onChange={(e) => setPeExtremity(e.target.value)}
-                              placeholder="예: Pitting edema(-)"
-                              readOnly={isReadOnly}
-                              className={`mt-1 w-full rounded-xl border border-black/30 px-3 py-2 text-sm outline-none ${
-                                isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
-                              }`}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] font-bold text-black/50 block">기타 신체진찰 소견</label>
+                            <label className="text-[10px] font-bold text-black/50 block">신체 진찰 소견 (P/E)</label>
                             <textarea
                               value={physicalExtra}
                               onChange={(e) => setPhysicalExtra(e.target.value)}
-                              rows={2}
-                              placeholder="추가 소견 (줄바꿈 구분)"
+                              rows={4}
+                              placeholder="예: [General] V/S : stable&#10;[HEENT] 눈(-), 구강(-)&#10;[Abdomen] Suprapubic Td/rTd(-/-)"
                               readOnly={isReadOnly}
                               className={`w-full rounded-xl border border-black px-3 py-2 text-sm resize-y outline-none ${
                                 isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
@@ -842,105 +899,34 @@ function PastExamsContent() {
                         </div>
                       </section>
 
-                      <section className="space-y-4 rounded-2xl border border-black p-4 bg-white/50">
-                        <h3 className="text-xs font-black uppercase tracking-widest">예상 감별 진단 1~3순위</h3>
-                        <div className="grid gap-2">
-                          <input
-                            value={dx1}
-                            onChange={(e) => setDx1(e.target.value)}
-                            placeholder="1순위 (주진단)"
-                            readOnly={isReadOnly}
-                            className={`rounded-xl border border-black px-3 py-2 text-sm outline-none ${
-                              isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
-                            }`}
-                          />
-                          <input
-                            value={dx2}
-                            onChange={(e) => setDx2(e.target.value)}
-                            placeholder="2순위"
-                            readOnly={isReadOnly}
-                            className={`rounded-xl border border-black px-3 py-2 text-sm outline-none ${
-                              isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
-                            }`}
-                          />
-                          <input
-                            value={dx3}
-                            onChange={(e) => setDx3(e.target.value)}
-                            placeholder="3순위"
-                            readOnly={isReadOnly}
-                            className={`rounded-xl border border-black px-3 py-2 text-sm outline-none ${
-                              isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
-                            }`}
-                          />
-                        </div>
-                      </section>
-
-                      <section className="space-y-4 rounded-2xl border border-black p-4 bg-white/50">
-                        <h3 className="text-xs font-black uppercase tracking-widest">환자 교육 및 진료 계획 (Answer Key)</h3>
-                        <div className="space-y-3">
-                          <div>
-                            <label className="text-[10px] font-bold text-black/50 block">필요한 검사 계획 3가지</label>
-                            <textarea
-                              value={managementPlanTests}
-                              onChange={(e) => setManagementPlanTests(e.target.value)}
-                              rows={2}
-                              placeholder="예: 1. 요역동학 검사\n2. 골반초음파 및 CT 영상검사\n3. 소변(배양)검사"
-                              readOnly={isReadOnly}
-                              className={`mt-1 w-full rounded-xl border border-black/30 px-3 py-2 text-sm outline-none resize-y ${
-                                isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
-                              }`}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] font-bold text-black/50 block">필요한 치료 계획 3가지</label>
-                            <textarea
-                              value={managementPlanTreatment}
-                              onChange={(e) => setManagementPlanTreatment(e.target.value)}
-                              rows={2}
-                              placeholder="예: 1. 생활 습관 교육\n2. 케겔 운동, 방광 및 배뇨 훈련\n3. 약물 치료"
-                              readOnly={isReadOnly}
-                              className={`mt-1 w-full rounded-xl border border-black/30 px-3 py-2 text-sm outline-none resize-y ${
-                                isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
-                              }`}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] font-bold text-black/50 block">환자 교육/설명 계획</label>
-                            <textarea
-                              value={patientEducation}
-                              onChange={(e) => setPatientEducation(e.target.value)}
-                              rows={2}
-                              placeholder="예: 요실금 종류별 상세 설명 및 생활 습관 교정 설명"
-                              readOnly={isReadOnly}
-                              className={`mt-1 w-full rounded-xl border border-black/30 px-3 py-2 text-sm outline-none resize-y ${
-                                isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
-                              }`}
-                            />
-                          </div>
-                        </div>
-                      </section>
-
+                      {/* 6. 특이사항 & 가이드 */}
                       <section className="space-y-4 rounded-2xl border border-black p-4 bg-white/50">
                         <h3 className="text-xs font-black uppercase tracking-widest">특이사항 & 가이드</h3>
-                        <input
-                          value={specialQuestion}
-                          onChange={(e) => setSpecialQuestion(e.target.value)}
-                          placeholder="주요 환자 우려/질문 사항"
-                          readOnly={isReadOnly}
-                          className={`w-full rounded-xl border border-black px-3 py-2 text-sm outline-none ${
-                            isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
-                          }`}
-                        />
-                        <textarea
-                          value={specialOther}
-                          onChange={(e) => setSpecialOther(e.target.value)}
-                          rows={2}
-                          placeholder="기타 특이 설정 사항"
-                          readOnly={isReadOnly}
-                          className={`w-full rounded-xl border border-black px-3 py-2 text-sm resize-y outline-none ${
-                            isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
-                          }`}
-                        />
+                        <div>
+                          <label className="text-[10px] font-bold text-black/50 block">주요 환자 우려/질문 사항</label>
+                          <input
+                            value={specialQuestion}
+                            onChange={(e) => setSpecialQuestion(e.target.value)}
+                            placeholder="주요 환자 우려/질문 사항"
+                            readOnly={isReadOnly}
+                            className={`w-full mt-1 rounded-xl border border-black px-3 py-2 text-sm outline-none ${
+                              isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-black/50 block">기타 특이 설정 사항</label>
+                          <textarea
+                            value={specialOther}
+                            onChange={(e) => setSpecialOther(e.target.value)}
+                            rows={2}
+                            placeholder="기타 특이 설정 사항"
+                            readOnly={isReadOnly}
+                            className={`w-full mt-1 rounded-xl border border-black px-3 py-2 text-sm resize-y outline-none ${
+                              isReadOnly ? 'bg-neutral-50 border-neutral-200 text-neutral-850' : ''
+                            }`}
+                          />
+                        </div>
                       </section>
 
                       {isReadOnly ? (
@@ -968,20 +954,65 @@ function PastExamsContent() {
                             연습 설정으로 이동
                           </button>
                         </div>
+                      ) : viewingExam ? (
+                        <div className="flex gap-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setViewingExam(null);
+                              setRegisterOpen(false);
+                            }}
+                            className="px-6 py-4 rounded-2xl border border-black bg-white text-black text-sm font-bold hover:bg-neutral-50 transition-all active:scale-[0.98]"
+                          >
+                            취소
+                          </button>
+                          <button
+                            type="button"
+                            disabled={submitting}
+                            onClick={() => void handleDeleteExam()}
+                            className="px-6 py-4 rounded-2xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-all active:scale-[0.98] disabled:opacity-50"
+                          >
+                            삭제
+                          </button>
+                          <button
+                            type="button"
+                            disabled={submitting}
+                            onClick={() => void handleRegisterExam()}
+                            className="flex-1 py-4 rounded-2xl bg-black text-white text-sm font-bold hover:bg-black/90 disabled:opacity-50 flex items-center justify-center gap-2"
+                          >
+                            {submitting ? (
+                              <>
+                                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                수정 내용 저장 중...
+                              </>
+                            ) : '수정 내용 저장'}
+                          </button>
+                        </div>
                       ) : (
-                        <button
-                          type="button"
-                          disabled={submitting}
-                          onClick={() => void handleRegisterExam()}
-                          className="w-full py-4 rounded-2xl bg-black text-white text-sm font-bold hover:bg-black/90 disabled:opacity-50 flex items-center justify-center gap-2"
-                        >
-                          {submitting ? (
-                            <>
-                              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                              AI 기출 케이스 완성 및 등록 중...
-                            </>
-                          ) : '기출 문제 은행에 기출 등록'}
-                        </button>
+                        <div className="flex gap-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRegisterOpen(false);
+                            }}
+                            className="px-6 py-4 rounded-2xl border border-black bg-white text-black text-sm font-bold hover:bg-neutral-50 transition-all active:scale-[0.98]"
+                          >
+                            취소
+                          </button>
+                          <button
+                            type="button"
+                            disabled={submitting}
+                            onClick={() => void handleRegisterExam()}
+                            className="flex-1 py-4 rounded-2xl bg-black text-white text-sm font-bold hover:bg-black/90 disabled:opacity-50 flex items-center justify-center gap-2"
+                          >
+                            {submitting ? (
+                              <>
+                                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                AI 기출 케이스 완성 및 등록 중...
+                              </>
+                            ) : '기출 문제 은행에 기출 등록'}
+                          </button>
+                        </div>
                       )}
                     </div>
                   )}

@@ -52,14 +52,15 @@ export async function POST(req: NextRequest) {
 6. patientGender는 "남" 또는 "여" 중 하나여야 합니다.
 7. chiefComplaintText는 의사(사용자)가 진료실에 들어섰을 때 보게 될 상황지침 한 문장 혹은 짧은 문단입니다. 환자의 나이, 성별, 내원이유를 포함하여 자연스러운 의학 지침서 톤으로 작성하세요 (예: "47세 여자 박임자씨가 소변이 새는 증상으로 내원하였다.").
 8. scope는 다음과 같이 고정하세요: { "history": true, "physical": true, "diagnosisPlan": true }
-9. historyBlocks는 이미지 속 모든 문진 정보를 각 키에 매핑하세요. 문맥상 내용이 없는 항목은 빈 문자열("")로 채우되, 최대한 이미지의 문장을 정교하게 반영하세요:
+9. historyBlocks는 이미지 속 모든 문진 정보를 각 키에 매핑하세요. 절대 내용을 임의로 생략하거나 요약 및 누락하지 말고, 특히 A(동반 증상) 및 주소(주증상)를 포함하여 이미지의 모든 세부 사항을 정교하게 반영하세요:
+   - 주소: 주증상 (Chief Complaint - 환자가 가장 먼저 호소하는 주증상과 그 기간 등)
    - O: 발병 시기 (Onset)
    - L: 부위 및 방사통 (Location)
    - D: 지속 시간 및 빈도 (Duration)
    - Co: 경과 (Course - 악화/완화 경향 등)
    - Ex: 이전 경험 (Experience - 과거 유사한 증상 경험)
    - C: 통증/병변의 특징 및 강도 (Character)
-   - A: 동반 증상 (Associated symptom)
+   - A: 동반 증상 (Associated symptom - 결코 누락하지 말고 이미지 속 사소한 동반 증상까지 전부 기재하세요)
    - F: 악화/완화 요인 (Factor)
    - E: 이전 검진/검사 결과 (Exam)
    - 약: 약물력 (Medications)
@@ -74,12 +75,10 @@ export async function POST(req: NextRequest) {
     - hr: 맥박 수치 문자열 (없으면 "80" 또는 빈값)
     - rr: 호흡 수치 문자열 (없으면 "20" 또는 빈값)
     - temp: 체온 수치 문자열 (없으면 "36.5" 또는 빈값)
-11. peGeneral, peHEENT, peAbdomen, peExtremity는 이미지 속 신체진찰(P/E) 소견에서 해당하는 부위를 찾아 상세히 적으세요. (예: peHEENT: "눈(-), 구강(-), 갑상샘/림프절(-/-), 피부 긴장도/부종(-/-)", peAbdomen: "Suprapubic Td/rTd(-/-), CVAT(-)..."). 없으면 빈 문자열("")로 하세요.
-12. physicalExtraLines: 기타 신체진찰 소견이 이미지에 있으면 행 단위 문자열 배열로 적으세요.
-13. diagnosisRanked: 이미지의 진단을 기반으로 예상 추정 진단 1순위, 2순위, 3순위를 각각 문자열 배열로 적으세요. (예: ["절박성 요실금", "신경성 요실금", "과민성 방광"])
-14. managementPlanTests: 필요한 검사/검진 계획을 상세히 적으세요. (예: "1. 요역동학 검사\n2. 골반초음파 및 CT 영상검사\n3. 소변(배양)검사")
-15. managementPlanTreatment: 필요한 치료/처방 계획을 상세히 적으세요. (예: "1. 생활 습관 교육\n2. 케겔 운동, 방광 및 배뇨 훈련\n3. 약물 치료")
-16. patientEducation: 환자 교육 및 설명 가이드를 상세히 적으세요. (예: "요실금 종류별 상세 설명 및 생활 습관 교정 설명")
+11. physicalExamFindings: 이미지 속 신체진찰(P/E) 소견을 임의로 분류하지 말고 이미지에 표시된 항목과 줄바꿈 구조 그대로 정교하게 텍스트 블록으로 기재하십시오. (peGeneral, peHEENT 등 여러 필드로 나누어 쓰지 말아야 합니다.)
+12. diagnosisRanked: 이미지의 진단을 기반으로 예상 추정 진단 1순위, 2순위, 3순위를 각각 문자열 배열로 적으세요. (예: ["절박성 요실금", "신경성 요실금", "과민성 방광"])
+13. managementPlanTests: 필요한 검사/검진 계획을 상세히 적으세요. (예: "1. 요역동학 검사\n2. 골반초음파 및 CT 영상검사\n3. 소변(배양)검사")
+14. managementPlanTreatment: 필요한 치료/처방 계획을 상세히 적으세요. (예: "1. 생활 습관 교육\n2. 케겔 운동, 방광 및 배뇨 훈련\n3. 약물 치료")
 17. specialQuestion: 환자가 진료 도중 질문하거나 우려하는 특이 사항을 적으세요 (예: "소변 새는게 많이 불편한데 이 증상이 없어질 수 있나요? 그리고 큰 병 아닌지 걱정돼요.").
 18. specialOther: 기타 정보나 연출 가이드, 환자 성격 특이사항을 적으세요 (예: "소변이 새는 사실을 많이 부끄러워 함.").
 

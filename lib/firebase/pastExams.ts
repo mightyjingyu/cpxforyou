@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, setDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
 import { getFirebaseDb } from './client';
 import { stripUndefinedDeep } from './sanitizeForFirestore';
 import { PastExam } from '@/types/pastExam';
@@ -24,3 +24,10 @@ export async function savePastExam(exam: PastExam): Promise<void> {
   const payload = stripUndefinedDeep(exam);
   await setDoc(ref, payload, { merge: true });
 }
+
+export async function deletePastExam(id: string): Promise<void> {
+  const db = getFirebaseDb();
+  const ref = doc(db, 'pastExams', id);
+  await deleteDoc(ref);
+}
+

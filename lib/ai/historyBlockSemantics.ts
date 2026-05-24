@@ -3,6 +3,7 @@
  * 케이스 완성 LLM과 UI 힌트에 동일하게 사용한다.
  */
 export const HISTORY_KEYS = [
+  '주소',
   'O',
   'L',
   'D',
@@ -32,6 +33,12 @@ export type HistoryBlockSemantic = {
 };
 
 export const HISTORY_BLOCK_SEMANTICS: Record<HistoryBlockKey, HistoryBlockSemantic> = {
+  주소: {
+    mnemonic: 'OLD_COEX',
+    en: 'Chief Complaint',
+    ko: '주증상 및 내원 이유/기간',
+    mergeHint: 'chief_complaint_display 및 symptom_details 내 주요 증상',
+  },
   O: {
     mnemonic: 'OLD_COEX',
     en: 'Onset',
