@@ -12,7 +12,11 @@ import {
 import { getFirebaseAuth } from '@/lib/firebase/client';
 import { saveUserSession, listUserSessions } from '@/lib/firebase/userSessions';
 import { readMemoLocalBackup, writeMemoLocalBackup } from '@/lib/memoLocalBackup';
-import { loadUserSettings, saveUserSettings } from '@/lib/firebase/userSettingsDoc';
+import {
+  loadUserSettings,
+  saveUserSettings,
+  MemoTemplatePersisted,
+} from '@/lib/firebase/userSettingsDoc';
 import type { DirectCaseFormPayload, DirectCasePersisted } from '@/types/directCase';
 
 const DEFAULT_COUNTDOWN_SECONDS = 720;
@@ -184,6 +188,50 @@ function readPersistedDirectCasesFromDisk(uid: string): DirectCasePersisted[] {
     const parsed = JSON.parse(raw) as { state?: { directCases?: DirectCasePersisted[] } };
     const arr = parsed.state?.directCases;
     return Array.isArray(arr) ? arr.slice(0, 200) : [];
+  } catch {
+    return [];
+  }
+}
+
+function mergeMemoTemplatesByUpdatedAt(...lists: MemoTemplatePersisted[][]): MemoTemplatePersisted[] {
+  const byId = new Map<string, MemoTemplatePersisted>();
+  for (const list of lists) {
+    for (const item of list) {
+      if (!item?.id) continue;
+      const prev = byId.get(item.id);
+      if (!prev || item.updatedAt >= prev.updatedAt) {
+        byId.set(item.id, item);
+      }
+    }
+  }
+  return Array.from(byId.values())
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, 100);
+}
+
+function readPersistedMemoTemplatesFromDisk(uid: string): MemoTemplatePersisted[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const key = `${BASE_PERSIST_KEY}:${uid}`;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as { state?: { memoTemplates?: MemoTemplatePersisted[] } };
+    const arr = parsed.state?.memoTemplates;
+    return Array.isArray(arr) ? arr.slice(0, 100) : [];
+  } catch {
+    return [];
+  }
+}
+
+function readPersistedBookmarksFromDisk(uid: string): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const key = `${BASE_PERSIST_KEY}:${uid}`;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as { state?: { bookmarkedPastExamIds?: string[] } };
+    const arr = parsed.state?.bookmarkedPastExamIds;
+    return Array.isArray(arr) ? arr : [];
   } catch {
     return [];
   }
@@ -534,11 +582,21 @@ export const useSessionStore = create<SessionState>()(
               readPersistedDirectCasesFromDisk(uid),
               state.directCases ?? []
             );
+            const mergedTemplates = mergeMemoTemplatesByUpdatedAt(
+              settings.memoTemplates ?? [],
+              readPersistedMemoTemplatesFromDisk(uid),
+              state.memoTemplates ?? []
+            );
+            const mergedBookmarks = Array.from(new Set([
+              ...(settings.bookmarkedPastExamIds ?? []),
+              ...readPersistedBookmarksFromDisk(uid),
+              ...(state.bookmarkedPastExamIds ?? []),
+            ]));
             return {
               archivedSessions: sessions,
-              memoTemplates: settings.memoTemplates.slice(0, 100),
+              memoTemplates: mergedTemplates,
               directCases: mergedDirect,
-              bookmarkedPastExamIds: settings.bookmarkedPastExamIds ?? [],
+              bookmarkedPastExamIds: mergedBookmarks,
               examTimeDeductionSeconds: Math.min(
                 MAX_EXAM_DEDUCTION_SECONDS,
                 Math.max(MIN_EXAM_DEDUCTION_SECONDS, settings.examTimeDeductionSeconds)
@@ -546,7 +604,7 @@ export const useSessionStore = create<SessionState>()(
               memoContent: nextMemo,
             };
           });
-          // 병합 결과를 Firestore에 반영해 다른 기기·다음 로드에서도 유지 (Custom Mode 증례 유실 방지)
+          // 병합 결과를 Firestore에 반영해 다른 기기·다음 로드에서도 유지 (Custom Mode 증례/메모 유실 방지)
           await get().syncUserSettingsToCloud();
         } catch (e) {
           console.error('loadUserDataFromCloud failed:', e);
