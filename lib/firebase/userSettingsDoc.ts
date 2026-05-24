@@ -18,6 +18,7 @@ export type UserSettingsDoc = {
   directCases?: DirectCasePersisted[];
   /** 진료 중 메모 패널 초안 — 로그인 시 클라우드에 동기화되어 기기 간 유지 */
   draftMemoContent?: string;
+  bookmarkedPastExamIds?: string[];
   updatedAt: number;
 };
 
@@ -35,6 +36,7 @@ export async function loadUserSettings(userId: string): Promise<UserSettingsDoc>
       memoTemplates: [],
       directCases: [],
       draftMemoContent: undefined,
+      bookmarkedPastExamIds: [],
       updatedAt: Date.now(),
     };
   }
@@ -45,6 +47,7 @@ export async function loadUserSettings(userId: string): Promise<UserSettingsDoc>
     memoTemplates: Array.isArray(d.memoTemplates) ? d.memoTemplates : [],
     directCases: Array.isArray(d.directCases) ? d.directCases.slice(0, 200) : [],
     draftMemoContent: typeof d.draftMemoContent === 'string' ? d.draftMemoContent : undefined,
+    bookmarkedPastExamIds: Array.isArray(d.bookmarkedPastExamIds) ? d.bookmarkedPastExamIds : [],
     updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : Date.now(),
   };
 }

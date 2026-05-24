@@ -88,7 +88,21 @@ export default function ArchiveDetailPage() {
                   ({caseSpec.patient.age}세/{caseSpec.patient.gender})
                 </span>
               </p>
-              <p className="text-sm text-neutral-500 mt-1">{caseSpec.clinical_presentation}</p>
+              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                {session.isPastExam && (
+                  <span className="text-[9px] font-extrabold text-blue-600 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 uppercase tracking-wide">
+                    기출 모드
+                  </span>
+                )}
+                {caseSpec.case_source === 'direct_hybrid' && !session.isPastExam && (
+                  <span className="text-[9px] font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 uppercase tracking-wide">
+                    커스텀 증례
+                  </span>
+                )}
+                <span className="text-sm text-neutral-500">
+                  {session.isPastExam ? (session.pastExamTitle || caseSpec.clinical_presentation) : caseSpec.clinical_presentation}
+                </span>
+              </div>
             </div>
             {scoreResult && (
               <div className="text-right">

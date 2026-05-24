@@ -176,6 +176,8 @@ export interface SessionData {
   physicalExamDone: boolean;
   timerMode?: TimerMode;
   phaseDurations?: SessionPhaseDurations;
+  isPastExam?: boolean;
+  pastExamTitle?: string;
 }
 
 export type Difficulty = 'easy' | 'normal' | 'hard';

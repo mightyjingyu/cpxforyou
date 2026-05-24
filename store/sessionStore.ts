@@ -60,12 +60,18 @@ interface SessionState {
   /** Custom Mode 저장 증례 (Firestore 동기화) */
   directCases: DirectCasePersisted[];
   cloudSessionSyncQueue: CloudSessionRetryItem[];
+  bookmarkedPastExamIds: string[];
+  togglePastExamBookmark: (id: string) => Promise<void>;
+  isPastExam: boolean;
+  pastExamTitle: string | null;
 
   startSession: (
     caseSpec: CaseSpec,
     sessionId: string,
     difficulty: 'easy' | 'normal' | 'hard',
-    timerMode?: TimerMode
+    timerMode?: TimerMode,
+    isPastExam?: boolean,
+    pastExamTitle?: string
   ) => void;
   startTimer: () => void;
   pauseTimer: () => void;
@@ -215,13 +221,25 @@ export const useSessionStore = create<SessionState>()(
       memoTemplates: [],
       directCases: [],
       cloudSessionSyncQueue: [],
+      bookmarkedPastExamIds: [],
+      isPastExam: false,
+      pastExamTitle: null,
 
-      startSession: (caseSpec, sessionId, difficulty, timerMode = 'countdown') =>
+      startSession: (
+        caseSpec,
+        sessionId,
+        difficulty,
+        timerMode = 'countdown',
+        isPastExam = false,
+        pastExamTitle
+      ) =>
         set({
           caseSpec,
           sessionId,
           difficulty,
           timerMode,
+          isPastExam,
+          pastExamTitle: pastExamTitle || null,
           timeRemaining: DEFAULT_COUNTDOWN_SECONDS,
           countUpElapsed: 0,
           timerStarted: false,
@@ -437,6 +455,8 @@ export const useSessionStore = create<SessionState>()(
           physicalExamDone: state.physicalExamDone,
           timerMode: state.timerMode,
           phaseDurations: state.phaseDurations || undefined,
+          isPastExam: state.isPastExam,
+          pastExamTitle: state.pastExamTitle || undefined,
         };
 
         set((s) => ({
@@ -518,6 +538,7 @@ export const useSessionStore = create<SessionState>()(
               archivedSessions: sessions,
               memoTemplates: settings.memoTemplates.slice(0, 100),
               directCases: mergedDirect,
+              bookmarkedPastExamIds: settings.bookmarkedPastExamIds ?? [],
               examTimeDeductionSeconds: Math.min(
                 MAX_EXAM_DEDUCTION_SECONDS,
                 Math.max(MIN_EXAM_DEDUCTION_SECONDS, settings.examTimeDeductionSeconds)
@@ -542,6 +563,7 @@ export const useSessionStore = create<SessionState>()(
             examTimeDeductionSeconds: s.examTimeDeductionSeconds,
             memoTemplates: s.memoTemplates,
             directCases: s.directCases ?? [],
+            bookmarkedPastExamIds: s.bookmarkedPastExamIds ?? [],
           };
           if (opts?.includeDraftMemo) {
             await saveUserSettings(user.uid, {
@@ -653,6 +675,15 @@ export const useSessionStore = create<SessionState>()(
         return get().syncUserSettingsToCloud();
       },
 
+      togglePastExamBookmark: async (id) => {
+        set((state) => {
+          const prev = state.bookmarkedPastExamIds ?? [];
+          const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+          return { bookmarkedPastExamIds: next };
+        });
+        await get().syncUserSettingsToCloud();
+      },
+
       reset: () =>
         set({
           caseSpec: null,
@@ -678,6 +709,9 @@ export const useSessionStore = create<SessionState>()(
           physicalExamElapsed: 0,
           educationElapsed: 0,
           prePhysicalTimerWasRunning: false,
+          bookmarkedPastExamIds: [],
+          isPastExam: false,
+          pastExamTitle: null,
         }),
 
       clearVolatileForAccountSwitch: () =>
@@ -705,6 +739,9 @@ export const useSessionStore = create<SessionState>()(
           physicalExamElapsed: 0,
           educationElapsed: 0,
           prePhysicalTimerWasRunning: false,
+          bookmarkedPastExamIds: [],
+          isPastExam: false,
+          pastExamTitle: null,
         }),
     }),
     {
@@ -715,6 +752,7 @@ export const useSessionStore = create<SessionState>()(
         examTimeDeductionSeconds: state.examTimeDeductionSeconds,
         memoTemplates: state.memoTemplates,
         directCases: state.directCases,
+        bookmarkedPastExamIds: state.bookmarkedPastExamIds,
         memoContent: state.memoContent,
         cloudSessionSyncQueue: state.cloudSessionSyncQueue,
       }),

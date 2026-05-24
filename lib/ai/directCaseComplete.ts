@@ -16,7 +16,7 @@ function parseVitalsNumber(raw: string | undefined, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function ensureAnswerKey(spec: CaseSpec): CaseSpec {
+function ensureAnswerKey(spec: CaseSpec, payload: DirectCaseFormPayload): CaseSpec {
   const ranked: [string, string, string] = spec.answer_key?.diagnosis_ranked
     ? spec.answer_key.diagnosis_ranked
     : [
@@ -28,12 +28,13 @@ function ensureAnswerKey(spec: CaseSpec): CaseSpec {
     ...spec,
     answer_key: {
       diagnosis_ranked: ranked,
-      management_plan: spec.answer_key?.management_plan ?? {
-        tests: '1~3순위 감별을 구분할 수 있는 검사 시행 및 결과 확인 계획',
-        treatment: '중증도에 맞는 초기 치료 후 검사 결과에 따라 단계적 치료 조정',
+      management_plan: {
+        tests: payload.managementPlanTests?.trim() || spec.answer_key?.management_plan?.tests || '1~3순위 감별을 구분할 수 있는 검사 시행 및 결과 확인 계획',
+        treatment: payload.managementPlanTreatment?.trim() || spec.answer_key?.management_plan?.treatment || '중증도에 맞는 초기 치료 후 검사 결과에 따라 단계적 치료 조정',
       },
       patient_education:
-        spec.answer_key?.patient_education ??
+        payload.patientEducation?.trim() ||
+        spec.answer_key?.patient_education ||
         '진단 가능성별 주의사항, 악화 경고증상, 재내원/추적 계획을 교육',
     },
   };
@@ -147,9 +148,16 @@ JSON만 출력하세요.`;
 
     spec = normalizeVitalsFromPayload(spec, payload);
 
+    let peParts = [];
+    if (payload.peGeneral?.trim()) peParts.push(`[General] ${payload.peGeneral.trim()}`);
+    if (payload.peHEENT?.trim()) peParts.push(`[HEENT] ${payload.peHEENT.trim()}`);
+    if (payload.peAbdomen?.trim()) peParts.push(`[Abdomen] ${payload.peAbdomen.trim()}`);
+    if (payload.peExtremity?.trim()) peParts.push(`[Extremity] ${payload.peExtremity.trim()}`);
     if (payload.physicalExtraLines?.length) {
-      const extra = payload.physicalExtraLines.filter(Boolean).join('\n');
-      spec.physical_exam_findings = [spec.physical_exam_findings, extra].filter(Boolean).join('\n');
+      peParts.push(payload.physicalExtraLines.filter(Boolean).join('\n'));
+    }
+    if (peParts.length > 0) {
+      spec.physical_exam_findings = peParts.join('\n');
     }
 
     const clinicalCheck = getChecklistByClinicalPresentation(spec.clinical_presentation);
@@ -159,7 +167,7 @@ JSON만 출력하세요.`;
       spec = ensureChecklistItems(spec);
     }
 
-    spec = ensureAnswerKey(spec);
+    spec = ensureAnswerKey(spec, payload);
 
     if (!spec.differentials || spec.differentials.length < 2) {
       spec = {

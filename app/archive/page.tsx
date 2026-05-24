@@ -13,6 +13,7 @@ export default function ArchivePage() {
   const { user, authLoading, logout } = useAuth();
   const [gradeFilter, setGradeFilter] = useState<'ALL' | 'A' | 'B' | 'C' | 'D' | 'F'>('ALL');
   const [clinicalFilter, setClinicalFilter] = useState<string>('ALL');
+  const [modeFilter, setModeFilter] = useState<'ALL' | 'GENERATED' | 'PAST_EXAM' | 'CUSTOM'>('ALL');
   const [query, setQuery] = useState('');
   const [groupMode, setGroupMode] = useState<'date' | 'category'>('date');
   const [memoModal, setMemoModal] = useState<{
@@ -57,8 +58,15 @@ export default function ArchivePage() {
       const grade = s.scoreResult?.total_grade || 'F';
       const clinicalOk = clinicalFilter === 'ALL' || s.caseSpec.clinical_presentation === clinicalFilter;
       const gradeOk = gradeFilter === 'ALL' || grade === gradeFilter;
+      
+      const modeOk =
+        modeFilter === 'ALL' ||
+        (modeFilter === 'GENERATED' && !s.isPastExam && s.caseSpec.case_source !== 'direct_hybrid') ||
+        (modeFilter === 'PAST_EXAM' && s.isPastExam) ||
+        (modeFilter === 'CUSTOM' && s.caseSpec.case_source === 'direct_hybrid' && !s.isPastExam);
+
       const haystack = [
-        s.caseSpec.clinical_presentation,
+        s.isPastExam ? (s.pastExamTitle || s.caseSpec.clinical_presentation) : s.caseSpec.clinical_presentation,
         s.caseSpec.true_diagnosis,
         s.caseSpec.answer_key?.diagnosis_ranked?.join(' ') || '',
         s.memoContent || '',
@@ -68,9 +76,9 @@ export default function ArchivePage() {
         .join(' ')
         .toLowerCase();
       const searchOk = !q || haystack.includes(q);
-      return clinicalOk && gradeOk && searchOk;
+      return clinicalOk && gradeOk && modeOk && searchOk;
     });
-  }, [archivedSessions, clinicalFilter, gradeFilter, query]);
+  }, [archivedSessions, clinicalFilter, gradeFilter, modeFilter, query]);
 
   const groupedSessions = useMemo(() => {
     const groups = new Map<string, SessionData[]>();
@@ -185,7 +193,30 @@ export default function ArchivePage() {
                 placeholder="진단/임상/태그"
                 className="w-full rounded-2xl border border-black px-4 py-3 text-sm font-medium outline-none focus:bg-white bg-white/50 backdrop-blur-sm transition-all focus:ring-2 focus:ring-black/5"
               />
-              
+              <div className="mt-8 mb-3">
+                <p className="text-xs font-black text-black uppercase tracking-widest">연습 모드</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { key: 'ALL' as const, label: '전체 보기' },
+                  { key: 'GENERATED' as const, label: '일반 생성' },
+                  { key: 'PAST_EXAM' as const, label: '기출 모드' },
+                  { key: 'CUSTOM' as const, label: '커스텀 증례' },
+                ].map((m) => (
+                  <button
+                    key={m.key}
+                    onClick={() => setModeFilter(m.key)}
+                    className={`rounded-xl px-2 py-2 text-[10px] font-bold border transition-all ${
+                      modeFilter === m.key
+                        ? 'bg-black text-white border-black shadow-sm'
+                        : 'bg-white/50 text-black/60 border-black/20 hover:border-black hover:text-black'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+
               <div className="mt-8 mb-3">
                 <p className="text-xs font-black text-black uppercase tracking-widest">성적 라벨</p>
               </div>
@@ -408,6 +439,7 @@ function ArchiveCard({
   formatElapsed: (s: number) => string;
 }) {
   const grade = session.scoreResult?.total_grade || 'F';
+  const isCustomMode = session.caseSpec.case_source === 'direct_hybrid' && !session.isPastExam;
 
   return (
     <div
@@ -429,8 +461,20 @@ function ArchiveCard({
             }`}>
               {session.caseSpec.difficulty === 'easy' ? '쉬움' : session.caseSpec.difficulty === 'hard' ? '어려움' : '보통'}
             </span>
+            {session.isPastExam && (
+              <span className="text-[9px] font-extrabold text-blue-600 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 uppercase tracking-wide">
+                기출 모드
+              </span>
+            )}
+            {isCustomMode && (
+              <span className="text-[9px] font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 uppercase tracking-wide">
+                커스텀 증례
+              </span>
+            )}
           </div>
-          <p className="text-sm font-semibold text-black/80">{session.caseSpec.clinical_presentation}</p>
+          <p className="text-sm font-semibold text-black/80">
+            {session.isPastExam ? (session.pastExamTitle || session.caseSpec.clinical_presentation) : session.caseSpec.clinical_presentation}
+          </p>
           <p className="text-xs font-medium text-black/40 mt-1">{formatDate(session.startTime)}</p>
         </div>
 

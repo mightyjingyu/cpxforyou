@@ -44,6 +44,13 @@ export interface DirectCaseFormPayload {
   specialOther?: string;
   difficulty: Difficulty;
   friendliness?: 'cooperative' | 'normal' | 'uncooperative';
+  managementPlanTests?: string;
+  managementPlanTreatment?: string;
+  patientEducation?: string;
+  peHEENT?: string;
+  peAbdomen?: string;
+  peExtremity?: string;
+  peGeneral?: string;
 }
 
 export type DirectCasePersisted = {
